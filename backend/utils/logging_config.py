@@ -4,7 +4,7 @@ import logging
 from backend.config.settings import LOG_LEVEL
 
 
-def configure_logging():
+def configure_logging() -> None:
     level = getattr(logging, LOG_LEVEL)
 
     logging.basicConfig(

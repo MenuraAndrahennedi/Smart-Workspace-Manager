@@ -1,6 +1,10 @@
 # Reusable helper functions for creating and resolving file/folder paths
 
 from pathlib import Path
+import re
+import uuid
+
+from backend.utils.validators import validate_filename
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -35,3 +39,31 @@ def file_exists(path: str | Path) -> bool:
 def directory_exists(path: str | Path) -> bool:
     if isinstance(path,str): path = Path(path)
     return path.is_dir()
+
+
+def generate_safe_filename(original_filename: str) -> str:
+    original_filename = validate_filename(original_filename)
+
+    file_path = Path(original_filename)
+    file = Path(file_path.name)
+
+    filename = file.stem.lower()
+    extension = file.suffix.lower()
+
+    cleaned_filename = re.sub(r'[^\w-]', '', filename).replace(".", "_").strip("_-")
+
+    if not cleaned_filename:
+        cleaned_filename = "file"
+
+    unique_id = uuid.uuid4().hex[:8]
+
+    stored_filename = f"{cleaned_filename}_{unique_id}{extension}"
+
+    return stored_filename
+
+
+
+
+
+
+

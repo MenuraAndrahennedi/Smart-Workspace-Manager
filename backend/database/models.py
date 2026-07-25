@@ -106,7 +106,7 @@ class AnalysisJob(Base):
     
     completed_at: Mapped[datetime | None] = mapped_column(
         default = None
-    )
+    ) 
 
 
 # Stores information about generated reports

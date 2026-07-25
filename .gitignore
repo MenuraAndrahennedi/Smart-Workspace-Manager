@@ -4,6 +4,7 @@ smart-workspace/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest_tmp/
 .coverage
 htmlcov/
 
