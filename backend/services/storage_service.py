@@ -35,6 +35,3 @@ def initialize_storage() -> list[Path] | None:
 
     return relative_paths
 
-
-print(get_storage_root())
-print(initialize_storage())
