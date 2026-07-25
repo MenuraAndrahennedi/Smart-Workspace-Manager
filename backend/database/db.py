@@ -37,3 +37,7 @@ def get_db_session():
     finally:
         session.close()
 
+
+def initialize_database() -> None:
+    from backend.database import models
+    Base.metadata.create_all(bind=engine)
