@@ -62,7 +62,14 @@ def generate_safe_filename(original_filename: str) -> str:
     return stored_filename
 
 
+def format_file_size(size_bytes: int) -> str:
+    size_KB = size_bytes / 1024
+    size_MB = size_bytes / (1024 * 1024)
 
+    if size_MB >= 1:
+        return f"{size_MB: .2f}" + " MB"
+    else:
+        return f"{size_KB: .2f}" + " KB"
 
 
 
