@@ -67,6 +67,7 @@ def get_log_value_accepted(log_value: str) -> str:
 DATABASE_URL = get_valid_database_url("DATABASE_URL")
 DATA_ROOT = get_or_create_path(get_env_variable("DATA_ROOT"))
 MAX_UPLOAD_SIZE_MB = get_upload_size("MAX_UPLOAD_SIZE_MB")
+MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 # SECRET_KEY = get_secret_key("SECRET_KEY")
 STORAGE_PROVIDER = get_valid_storage_provider("STORAGE_PROVIDER")
 LOG_LEVEL = get_log_value_accepted("LOG_LEVEL")

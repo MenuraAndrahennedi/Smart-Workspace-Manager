@@ -15,11 +15,8 @@ FILE_TYPE_GROUPS : Final[Dict[str, List[str]]] = {
 }
 
 SUPPORTED_FILE_TYPES : Final[List[str]] = [extension for group in FILE_TYPE_GROUPS.values() for extension in group]
-
-MAX_FILE_SIZE_MB : Final[int] = 10  # Maximum file size in MB
-MAX_FILE_SIZE_BYTES : Final[int] = MAX_FILE_SIZE_MB * 1024 * 1024  # Maximum file size in bytes
 MAX_FILENAME_LENGTH : Final[int] = 255  # Maximum filename length
-#MAX_FILENAME_ATTEMPTS: Final[int] = 3
+
 
 
 STORAGE_DIRECTORIES = (

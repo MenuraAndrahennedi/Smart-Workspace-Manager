@@ -10,7 +10,8 @@ from backend.utils.validators import (
     validate_file_size,
     validate_filename,
 )
-from backend.utils.constants import MAX_FILE_SIZE_BYTES
+
+TEST_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 
 # Test validate_filename
@@ -49,21 +50,21 @@ def test_validate_file_extension_rejects_unsupported_extension():
 
 # Test validate_file_size
 def test_validate_file_size_accepts_valid_size():
-    result = validate_file_size(1024)
+    result = validate_file_size(1024, TEST_MAX_FILE_SIZE_BYTES)
     assert result == 1024
 
 def test_validate_file_size_rejects_oversized_file():
-    oversized_file = MAX_FILE_SIZE_BYTES + 1
+    oversized_file = TEST_MAX_FILE_SIZE_BYTES + 1
     with pytest.raises(ValueError):
-        validate_file_size(oversized_file)
+        validate_file_size(oversized_file, TEST_MAX_FILE_SIZE_BYTES)
 
 def test_validate_file_size_rejects_zerosized_file():
     with pytest.raises(ValueError):
-        validate_file_size(0)
+        validate_file_size(0, TEST_MAX_FILE_SIZE_BYTES)
 
 def test_validate_file_size_rejects_non_int_size():
     with pytest.raises(TypeError):
-        validate_file_size("ten")
+        validate_file_size("ten", TEST_MAX_FILE_SIZE_BYTES)
 
 
 # Test get_file_category
@@ -88,4 +89,3 @@ def test_find_unsupported_files_returns_invalid_items():
 def test_find_unsupported_files_returns_empty_list_for_supported_files():
     result = find_unsupported_files(["data.csv", "report.pdf", "profile.png"])
     assert result == []
-

@@ -1,4 +1,4 @@
-from backend.utils.constants import MAX_FILENAME_LENGTH, SUPPORTED_FILE_TYPES, MAX_FILE_SIZE_BYTES, FILE_TYPE_GROUPS
+from backend.utils.constants import MAX_FILENAME_LENGTH, SUPPORTED_FILE_TYPES, FILE_TYPE_GROUPS
 
 
 
@@ -32,12 +32,14 @@ def validate_file_extension(filename: str) -> str:
         raise ValueError(f"{filename}'s file extension does not support")
      
 
-def validate_file_size(filesize: int) -> int :
+def validate_file_size(filesize: int, max_size_bytes: int) -> int :
     if not isinstance(filesize, int):
         raise TypeError(f"Filesize must be an integer, got {type(filesize).__name__}.")
+    if not isinstance(max_size_bytes, int):
+        raise TypeError(f"Max filesize must be an integer, got {type(max_size_bytes).__name__}.")
     if not filesize > 0 :
         raise ValueError(f"{filesize} is invalid")
-    if not filesize <= MAX_FILE_SIZE_BYTES:
+    if not filesize <= max_size_bytes:
         raise ValueError(f"{filesize} exceeds the maximum file size")
     return filesize
 

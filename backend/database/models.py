@@ -19,7 +19,7 @@ class FileRecord(Base):
     )
 
     original_name: Mapped[str] = mapped_column(
-        String,
+        String(255),
         nullable = False
     )
 

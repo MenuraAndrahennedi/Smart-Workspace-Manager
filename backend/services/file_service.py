@@ -13,7 +13,7 @@ from backend.utils.validators import (
 from backend.services.storage_service import save_uploaded_bytes, delete_stored_file
 from backend.utils.file_utils import generate_safe_filename
 from backend.database.repositories import create_file
-from backend.config.settings import MAX_FILENAME_ATTEMPTS
+from backend.config.settings import MAX_FILENAME_ATTEMPTS, MAX_UPLOAD_SIZE_BYTES
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def validate_upload(filename: str, filesize_bytes: int) -> None:
     validate_filename(filename)
     validate_file_extension(filename)
-    validate_file_size(filesize_bytes)
+    validate_file_size(filesize_bytes, MAX_UPLOAD_SIZE_BYTES)
     
 
 @dataclass
@@ -83,5 +83,4 @@ def upload_file(
         except OSError:
             logger.exception("Failed to clean up partially uploaded file")
         raise
-
 
