@@ -278,7 +278,7 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
     original_name = "verification_file.csv"
     stored_name = "verification_file_001.csv"
     extension = "csv"
-    category = "spreadsheet"
+    category = "spreadsheets"
     size_bytes = 2048
     storage_path = "uploads/verification_file_001.csv"
     status = "uploaded"
@@ -366,9 +366,9 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
             # Update verification
             updated_stored_name = "verification_file_updated.csv"
             updated_storage_path = (
-                "processed/csv/verification_file_updated.csv"
+                "processed/spreadsheets/verification_file_updated.csv"
             )
-            updated_category = "processed"
+            updated_category = "spreadsheets"
             updated_status = "organized"
 
             orm_update_result = update_file(

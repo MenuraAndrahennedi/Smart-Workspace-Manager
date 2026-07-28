@@ -8,6 +8,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
 from backend.services.file_service import upload_file
+from backend.services.automation_service import organize_uploaded_file
 from backend.database.db import get_db_session
 from backend.utils.constants import FILE_TYPE_GROUPS
 from backend.utils.file_utils import format_file_size
@@ -47,13 +48,19 @@ if upload_clicked:
                         file_bytes,
                         session
                     )
-                    st.success("File uploaded successfully.")
+                    organized = organize_uploaded_file(
+                        session,
+                        result.file_id,
+                        Path(result.saved_path),
+                    )
+                    st.success("File uploaded and organized successfully.")
                     st.subheader("Upload Details")
                     st.write("Original name:", result.original_filename)
                     st.write("Stored name:", result.stored_filename)
                     st.write("File type:", result.extension.upper())
+                    st.write("Category:", organized.category)
                     st.write("File size:", format_file_size(result.size_bytes))
-                    st.write("Location:", result.saved_path)
+                    st.write("Location:", str(organized.destination_path))
                 except Exception as error:
                     st.error(str(error))
 

@@ -13,8 +13,10 @@ The project currently includes:
 - Upload validation
 - Safe stored filename generation
 - Local storage setup
+- Automatic file organization into managed categories
+- Automation logs for organization success and failure events
 - SQLite database models and repositories
-- File metadata creation
+- File metadata creation and organization updates
 - Unit and integration tests
 
 ## Project Structure
@@ -23,7 +25,7 @@ The project currently includes:
 backend/
   config/          Environment/settings loading
   database/        SQLAlchemy engine, models, repositories
-  services/        File and storage workflows
+  services/        File, storage, and automation workflows
   utils/           Validators, path helpers, logging, constants
 
 frontend/

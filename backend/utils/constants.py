@@ -1,5 +1,7 @@
 from typing import Dict, Final, List
 
+MAX_FILENAME_LENGTH : Final[int] = 255  # Maximum filename length
+
 
 FILE_TYPE_GROUPS : Final[Dict[str, List[str]]] = {
     "spreadsheet": ["csv", "xls", "xlsx"],
@@ -15,14 +17,25 @@ FILE_TYPE_GROUPS : Final[Dict[str, List[str]]] = {
 }
 
 SUPPORTED_FILE_TYPES : Final[List[str]] = [extension for group in FILE_TYPE_GROUPS.values() for extension in group]
-MAX_FILENAME_LENGTH : Final[int] = 255  # Maximum filename length
+
+
+ORGANIZER_CATEGORY_RULES: Final[Dict[str, List[str]]] = {
+    "spreadsheets": FILE_TYPE_GROUPS["spreadsheet"],
+    "images": FILE_TYPE_GROUPS["image"],
+    "pdf": FILE_TYPE_GROUPS["pdf"],
+    "documents": [
+        *FILE_TYPE_GROUPS["document"],
+        *FILE_TYPE_GROUPS["presentation"],
+    ],
+}
+DEFAULT_ORGANIZER_CATEGORY: Final[str] = "others"
 
 
 
-STORAGE_DIRECTORIES = (
+STORAGE_DIRECTORIES: Final[tuple[str, ...]] = (
     "uploads",
     "processed",
-    "processed/csv",
+    "processed/spreadsheets",
     "processed/images",
     "processed/documents",
     "processed/pdf",

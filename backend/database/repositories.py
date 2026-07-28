@@ -1,8 +1,9 @@
+from pathlib import Path
+
 from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
-from backend.database.models import FileRecord
-
+from backend.database.models import AutomationLog, FileRecord
 
 def create_file(
     session: Session,
@@ -86,5 +87,45 @@ def delete_file(
         return True
          
 
+def update_file_location(
+    session: Session,
+    file_id: int,
+    new_path: Path | str,
+    category: str,
+    status: str = "organized",
+) -> FileRecord | None: 
+    file_record = session.get(FileRecord, file_id)
 
+    if file_record is None:
+        return None
 
+    file_record.storage_path = str(new_path)
+    file_record.status = status
+    file_record.category = category
+
+    session.flush()
+    session.refresh(file_record)
+
+    return file_record
+    
+    
+
+def create_automation_log(
+    session: Session,
+    action: str,
+    target: str,
+    status: str,
+    message: str,
+) -> AutomationLog:
+    log_record = AutomationLog(
+        action=action,
+        target=target,
+        status=status,
+        message=message,
+    )
+
+    session.add(log_record)
+    session.flush()
+    session.refresh(log_record)
+
+    return log_record

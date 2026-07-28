@@ -1,6 +1,7 @@
 # Manage storage paths without other parts of the system needing to know whether the root is
 
 from pathlib import Path
+import shutil
 
 from backend.config.settings import DATA_ROOT, STORAGE_PROVIDER
 from backend.utils.file_utils import ensure_directory, file_exists
@@ -55,12 +56,45 @@ def save_uploaded_bytes(stored_filename: str, file_bytes: bytes) -> Path:
 
 
 def delete_stored_file(path: Path) -> bool:
+    path = Path(path).resolve()
+    if not path.is_relative_to(DATA_ROOT):
+        raise ValueError(f"Path not related to data root: {path}")
+    
+
     if path.exists() and file_exists(path):
         path.unlink()
         return True
     return False
 
+
+
+def move_file(
+    source_path: Path,
+    destination_path: Path
+) -> Path:
+    source_path = Path(source_path).resolve()
+    if not file_exists(source_path):
+        raise ValueError("Source file does not exist")
+        
+    destination_path = Path(destination_path).resolve()
+
+    if not source_path.is_relative_to(DATA_ROOT) or not destination_path.is_relative_to(DATA_ROOT):
+        unrelated_path = source_path if not source_path.is_relative_to(DATA_ROOT) else destination_path
+        raise ValueError(f"Path not related to data root: {unrelated_path}")
     
+    ensure_directory(destination_path.parent)
+
+    if file_exists(destination_path):
+        raise FileExistsError(f"File already exists at {destination_path}")
+
+    return Path(shutil.move(source_path, destination_path))
+
+    
+
+
+
+
+
 
 
 
