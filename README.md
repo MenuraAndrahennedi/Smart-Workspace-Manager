@@ -9,14 +9,19 @@ Phase 1 uses Streamlit, SQLite, SQLAlchemy, reusable backend services, and pytes
 The project currently includes:
 
 - Streamlit app entry point
+- Dashboard with file totals, category/status summaries, and recent files
 - File upload page
 - Upload validation
 - Safe stored filename generation
 - Local storage setup
 - Automatic file organization into managed categories
 - Automation logs for organization success and failure events
+- Searchable, multi-filter File Library
+- Deferred file downloads and confirmed deletion
+- Safe source/report deletion with rollback restoration
 - SQLite database models and repositories
-- File metadata creation and organization updates
+- Cascading file, analysis-job, and report relationships
+- ORM and raw-SQL verification scripts using isolated databases
 - Unit and integration tests
 
 ## Project Structure
@@ -34,6 +39,10 @@ frontend/
 
 scripts/
   init_db.py       Creates database tables
+  migrate_day7_database.py
+                   Backs up and upgrades a pre-Day-8 SQLite database
+  sql_verifications/
+                   Isolated ORM and raw-SQL verification scripts
 
 tests/
   unit/            Unit tests
@@ -66,6 +75,13 @@ Copy-Item .env.example .env
 
 ```powershell
 python scripts/init_db.py
+```
+
+For a database created before the Day 7 cascade changes, run the
+backed-up migration once:
+
+```powershell
+python scripts/migrate_day7_database.py
 ```
 
 ## Run Tests

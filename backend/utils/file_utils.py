@@ -5,6 +5,7 @@ import re
 import uuid
 
 from backend.utils.validators import validate_filename
+from backend.utils.constants import MAX_FILENAME_LENGTH
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -56,21 +57,25 @@ def generate_safe_filename(original_filename: str) -> str:
         cleaned_filename = "file"
 
     unique_id = uuid.uuid4().hex[:8]
+    generated_suffix = f"_{unique_id}{extension}"
+    max_stem_length = MAX_FILENAME_LENGTH - len(generated_suffix)
+    if max_stem_length < 1:
+        raise ValueError("The file extension is too long to create a safe filename.")
 
-    stored_filename = f"{cleaned_filename}_{unique_id}{extension}"
+    stored_filename = f"{cleaned_filename[:max_stem_length]}{generated_suffix}"
 
     return stored_filename
 
 
 def format_file_size(size_bytes: int) -> str:
-    size_KB = size_bytes / 1024
-    size_MB = size_bytes / (1024 * 1024)
+    if size_bytes < 0:
+        raise ValueError("File size cannot be negative.")
 
-    if size_MB >= 1:
-        return f"{size_MB: .2f}" + " MB"
-    else:
-        return f"{size_KB: .2f}" + " KB"
-
-
-
+    if size_bytes >= 1024**3:
+        return f"{size_bytes / 1024**3:.2f} GB"
+    if size_bytes >= 1024**2:
+        return f"{size_bytes / 1024**2:.2f} MB"
+    if size_bytes >= 1024:
+        return f"{size_bytes / 1024:.2f} KB"
+    return f"{size_bytes} bytes"
 

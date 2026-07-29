@@ -39,7 +39,7 @@ def get_valid_database_url(name: str) -> str:
 
 def get_valid_storage_provider(name: str) -> str:
     value = get_env_variable(name)
-    valid_providers = ["local", "azure"]
+    valid_providers = ["local"]
     if value not in valid_providers:
         raise ValueError(f"Environment variable '{name}' must be one of {valid_providers}.")
     return value
@@ -80,4 +80,4 @@ MAX_FILENAME_ATTEMPTS = get_positive_int("MAX_FILENAME_ATTEMPTS")
 def time_now() -> datetime:
     return datetime.now(timezone.utc)
 
-TIME_SYSTEM_STARTED = time_now() 
+TIME_SYSTEM_STARTED = time_now()

@@ -1,4 +1,3 @@
-
 # SQL and SQLAlchemy Verification
 
 ## 1. Purpose
@@ -9,8 +8,8 @@ the equivalent database operations.
 
 ## 2. Verification Databases
 
-- `data/SQL_verification/orm_verification.db`
-- `data/SQL_verification/sql_verification.db`
+- `tmp_path/SQL_verification/orm_verification.db`
+- `tmp_path/SQL_verification/sql_verification.db`
 
 The real application database is not modified during verification.
 
@@ -90,7 +89,7 @@ does not exist.
 ```sql
 SELECT *
 FROM files
-ORDER BY created_at DESC;
+ORDER BY created_at DESC, id DESC;
 ```
 
 ### SQLAlchemy Equivalent
@@ -99,8 +98,9 @@ ORDER BY created_at DESC;
 
 ### Verification
 
-Both approaches return file records ordered from newest to oldest
-using the `created_at` timestamp.
+Both approaches return file records ordered from newest to oldest.
+The descending ID provides deterministic ordering when records share
+the same `created_at` timestamp.
 
 ## 7. UPDATE
 

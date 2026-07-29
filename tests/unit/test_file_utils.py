@@ -11,7 +11,9 @@ from backend.utils.file_utils import (
     get_or_create_path,
     resolve_data_path,
     file_exists,
-    directory_exists
+    directory_exists,
+    format_file_size,
+    generate_safe_filename,
 )
 
 # Test resolve_project_path
@@ -69,24 +71,30 @@ def test_file_exists_and_directory_exists(tmp_path):
     assert directory_exists(new_existing_folder) is True
 
 
-    
+def test_generate_safe_filename_stays_within_filesystem_limit():
+    original_name = f"{'a' * 251}.csv"
+
+    stored_name = generate_safe_filename(original_name)
+
+    assert len(stored_name) <= 255
+    assert stored_name.endswith(".csv")
 
 
+@pytest.mark.parametrize(
+    ("size_bytes", "expected"),
+    [
+        (0, "0 bytes"),
+        (512, "512 bytes"),
+        (1024, "1.00 KB"),
+        (1024**2, "1.00 MB"),
+        (1024**3, "1.00 GB"),
+    ],
+)
+def test_format_file_size_uses_correct_unit(size_bytes, expected):
+    assert format_file_size(size_bytes) == expected
 
 
-
-
-
-
-
-
-
-
-
-    
-
-
-
-
-
+def test_format_file_size_rejects_negative_values():
+    with pytest.raises(ValueError, match="cannot be negative"):
+        format_file_size(-1)
 

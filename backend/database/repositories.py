@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from sqlalchemy import select, desc
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from backend.database.models import AutomationLog, FileRecord
+from backend.database.models import AutomationLog, FileRecord, Report
 
 def create_file(
     session: Session,
@@ -44,7 +44,12 @@ def read_file_by_id(
 def get_all_files(
     session: Session
 ) -> list[FileRecord]:
-    file_record_list = session.scalars(select(FileRecord).order_by(desc(FileRecord.created_at))).all()
+    file_record_list = session.scalars(
+        select(FileRecord).order_by(
+            FileRecord.created_at.desc(),
+            FileRecord.id.desc(),
+        )
+    ).all()
     return file_record_list
 
 
@@ -129,3 +134,191 @@ def create_automation_log(
     session.refresh(log_record)
 
     return log_record
+
+
+
+def _normalize_filter_values(
+    values: str | list[str] | None,
+) -> list[str]:
+    if values is None:
+        return []
+
+    if isinstance(values, str):
+        values = [values]
+
+    return [
+        value.strip()
+        for value in values
+        if value and value.strip()
+    ]
+
+
+def _escape_like_pattern(value: str) -> str:
+    return (
+        value.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
+def search_files(
+    session: Session,
+    search_term: str,
+) -> list[FileRecord]:
+    return query_files(
+        session=session,
+        search_term=search_term,
+    )
+
+
+def filter_files_by_category(
+    session: Session,
+    category: str,
+) -> list[FileRecord]:
+    return query_files(
+        session=session,
+        category=category,
+    )
+
+
+def filter_files_by_status(
+    session: Session,
+    status: str,
+) -> list[FileRecord]:
+    return query_files(
+        session=session,
+        status=status,
+    )
+
+
+def query_files(
+    session: Session,
+    search_term: str | None = None,
+    category: str | list[str] | None = None,
+    status: str | list[str] | None = None,
+) -> list[FileRecord]:
+    query = select(FileRecord)
+    category_values = _normalize_filter_values(category)
+    status_values = _normalize_filter_values(status)
+
+    cleaned_search_term = search_term.strip() if search_term else ""
+    if cleaned_search_term:
+        search_pattern = f"%{_escape_like_pattern(cleaned_search_term)}%"
+        query = query.where(
+            or_(
+                FileRecord.original_name.ilike(search_pattern, escape="\\"),
+                FileRecord.stored_name.ilike(search_pattern, escape="\\"),
+            )
+        )
+
+    if category_values:
+        query = query.where(FileRecord.category.in_(category_values))
+
+    if status_values:
+        query = query.where(FileRecord.status.in_(status_values))
+
+    return session.scalars(
+        query.order_by(
+            FileRecord.updated_at.desc(),
+            FileRecord.id.desc(),
+        )
+    ).all()
+
+
+def get_report_storage_paths(
+    session: Session,
+    file_id: int,
+) -> list[Path]:
+    return [
+        Path(storage_path)
+        for storage_path in session.scalars(
+            select(Report.storage_path).where(Report.file_id == file_id)
+        ).all()
+    ]
+
+
+def count_files(
+    session: Session,
+) -> int:
+    return session.scalar(select(func.count(FileRecord.id))) or 0
+
+def get_file_summary(
+    session: Session,
+) -> dict[str, int]:
+    total_files = count_files(session)
+    total_size_bytes = session.scalar(
+        select(
+            func.coalesce(
+                func.sum(FileRecord.size_bytes),
+                0,
+            )
+        )
+    ) or 0
+
+    return {
+        "total_files": total_files,
+        "total_size_bytes": total_size_bytes,
+    }
+
+
+def group_files_by_category(
+    session: Session,
+) -> list[dict]:
+    results = session.execute(
+        select(
+            FileRecord.category,
+            func.count(FileRecord.id).label("file_count"),
+            func.coalesce(
+                func.sum(FileRecord.size_bytes),
+                0,
+            ).label("total_size_bytes"),
+        )
+        .group_by(FileRecord.category)
+        .order_by(
+            func.count(FileRecord.id).desc(),
+            FileRecord.category.asc(),
+        )
+    ).all()
+
+    return [
+        {
+            "category": result.category,
+            "file_count": result.file_count,
+            "total_size_bytes": result.total_size_bytes,
+        }
+        for result in results
+    ]
+
+def group_files_by_status(
+    session: Session,
+) -> list[dict]:
+    results = session.execute(
+        select(
+            FileRecord.status,
+            func.count(FileRecord.id).label("file_count"),
+        )
+        .group_by(FileRecord.status)
+        .order_by(FileRecord.status.asc())
+    ).all()
+
+    return [
+        {
+            "status": result.status,
+            "file_count": result.file_count,
+        }
+        for result in results
+    ]
+
+
+def get_recent_files(
+    session: Session,
+    limit: int = 5,
+) -> list[FileRecord]:
+    recent_files = session.scalars(
+        select(FileRecord).order_by(
+            FileRecord.updated_at.desc(),
+            FileRecord.id.desc()
+        ).limit(limit)
+    ).all()
+
+    return recent_files

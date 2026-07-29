@@ -57,6 +57,24 @@ def test_upload_file_allows_same_original_filename_twice(
     assert Path(second.saved_path).exists()
 
 
+def test_upload_file_stores_trimmed_original_filename(
+    temporary_data_root,
+    test_session,
+):
+    initialize_storage()
+
+    result = upload_file(
+        "  student_data.csv  ",
+        b"name,age\nMenura,22\n",
+        test_session,
+    )
+
+    record = test_session.get(FileRecord, result.file_id)
+    assert result.original_filename == "student_data.csv"
+    assert record is not None
+    assert record.original_name == "student_data.csv"
+
+
 def test_upload_file_rejects_invalid_extension_without_storage_or_database(
     temporary_data_root,
     test_session,

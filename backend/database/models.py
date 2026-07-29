@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Integer, String, Text, ForeignKey
 
 from backend.database.db import Base
@@ -64,6 +64,16 @@ class FileRecord(Base):
         onupdate = time_now
     )
 
+    analysis_jobs: Mapped[list["AnalysisJob"]] = relationship(
+        back_populates="file",
+        passive_deletes=True,
+    )
+
+    reports: Mapped[list["Report"]] = relationship(
+        back_populates="file",
+        passive_deletes=True,
+    )
+
 
 # Stores every time the user analyzes a CSV file.
 class AnalysisJob(Base):
@@ -77,7 +87,11 @@ class AnalysisJob(Base):
 
      
     file_id: Mapped[int] = mapped_column(
-        ForeignKey("files.id")
+        ForeignKey(
+            "files.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
     )
 
     status: Mapped[str] = mapped_column(
@@ -108,6 +122,15 @@ class AnalysisJob(Base):
         default = None
     ) 
 
+    file: Mapped["FileRecord"] = relationship(
+        back_populates="analysis_jobs",
+    )
+
+    reports: Mapped[list["Report"]] = relationship(
+        back_populates="analysis_job",
+        passive_deletes=True,
+    )
+
 
 # Stores information about generated reports
 class Report(Base):
@@ -119,16 +142,22 @@ class Report(Base):
         autoincrement=True
     )
 
-    file_id: Mapped[int | None] = mapped_column(
+    file_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("files.id"),
-        nullable = True
+        ForeignKey(
+            "files.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
     )
 
-    analysis_job_id: Mapped[int | None] = mapped_column(
+    analysis_job_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("analysis_jobs.id"),
-        nullable = True
+        ForeignKey(
+            "analysis_jobs.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
     )
 
     report_type: Mapped[str] = mapped_column(
@@ -149,6 +178,14 @@ class Report(Base):
 
     created_at : Mapped[datetime] = mapped_column(
         default = time_now
+    )
+
+    file: Mapped["FileRecord"] = relationship(
+        back_populates="reports",
+    )
+
+    analysis_job: Mapped["AnalysisJob"] = relationship(
+        back_populates="reports",
     )
 
 

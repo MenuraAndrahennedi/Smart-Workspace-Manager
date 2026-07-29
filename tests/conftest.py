@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.database.db import Base
+from backend.database.db import Base, enable_sqlite_foreign_keys
 
 
 @pytest.fixture
@@ -22,6 +22,7 @@ def temporary_data_root(tmp_path, monkeypatch):
 def test_engine(tmp_path):
     db_path = tmp_path / "test.db"
     engine = create_engine(f"sqlite:///{db_path}")
+    enable_sqlite_foreign_keys(engine)
     Base.metadata.create_all(bind=engine)
 
     yield engine

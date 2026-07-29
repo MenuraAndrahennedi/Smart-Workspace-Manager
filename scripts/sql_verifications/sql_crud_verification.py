@@ -1,13 +1,13 @@
 from pathlib import Path
 import sys
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
 from sqlalchemy import DateTime, bindparam, text
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
-from backend.database.db import Base
+from backend.database.db import Base, enable_sqlite_foreign_keys
 from backend.database.models import time_now, FileRecord
 from backend.database import models
 from backend.database.repositories import (
@@ -62,7 +62,7 @@ READ_FILE_BY_ID_SQL = text("""
 GET_ALL_FILES_SQL = text("""
     SELECT *
     FROM files
-    ORDER BY created_at DESC
+    ORDER BY created_at DESC, id DESC
 """)
 
 # Definition of UPDATE operation to a file. Here Values are only placeholders. : means the placeholder in SQLAlchemy text()
@@ -137,7 +137,6 @@ def sql_get_all_files(
         session: Session
 ) -> list[dict]:
     result = session.execute(GET_ALL_FILES_SQL)
-    session.flush()
 
     rows = result.mappings().all()
 
@@ -236,11 +235,13 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
         VERIFICATION_DB_URL_SQL,
         echo=True
     )
+    enable_sqlite_foreign_keys(verification_engine_sql)
 
     verification_engine_orm = create_engine(
         VERIFICATION_DB_URL_ORM,
         echo=True
     )
+    enable_sqlite_foreign_keys(verification_engine_orm)
 
     SQLVerificationSession = sessionmaker(
         bind=verification_engine_sql,

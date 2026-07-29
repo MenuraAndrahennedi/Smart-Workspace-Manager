@@ -3,7 +3,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import backend.services.file_service as file_service
+from backend.services.storage_service import StagedFileDeletion
 from backend.services.file_service import (
+    delete_actual_file,
     validate_upload,
     upload_file
 )
@@ -11,7 +13,8 @@ from backend.services.file_service import (
 
 def test_validate_upload():
     valid_result = validate_upload("report.csv", 5)
-    assert valid_result is None
+    assert valid_result == "report.csv"
+    assert validate_upload("  report.csv  ", 5) == "report.csv"
 
     with pytest.raises(ValueError):
         validate_upload("report.csv", 0)
@@ -244,3 +247,162 @@ def test_upload_file_logs_cleanup_failure_and_reraises_database_error(monkeypatc
             upload_file("report.csv", b"name,score\nAsha,95\n", fake_session)
 
     assert "Failed to clean up partially uploaded file" in caplog.text
+
+
+def test_delete_actual_file_deletes_database_record_and_storage_file(monkeypatch, tmp_path):
+    stored_file = tmp_path / "report.csv"
+    stored_file.write_text("name,score\nMenura,90")
+    staged_file = tmp_path / ".trash" / "report.csv"
+    fake_session = SimpleNamespace(info={})
+    calls = []
+
+    monkeypatch.setattr(
+        file_service,
+        "read_file_by_id",
+        lambda session, file_id: SimpleNamespace(
+            original_name="report.csv",
+            storage_path=str(stored_file),
+        ),
+    )
+
+    def fake_delete_file(session, file_id):
+        calls.append(("database", file_id))
+        return True
+
+    def fake_stage_files(paths):
+        calls.append(("storage", [Path(path) for path in paths]))
+        return [
+            StagedFileDeletion(
+                original_path=stored_file.resolve(),
+                staged_path=staged_file,
+            )
+        ]
+
+    monkeypatch.setattr(file_service, "delete_file", fake_delete_file)
+    monkeypatch.setattr(file_service, "get_report_storage_paths", lambda **kwargs: [])
+    monkeypatch.setattr(file_service, "stage_files_for_deletion", fake_stage_files)
+
+    result = delete_actual_file(
+        session=fake_session,
+        file_id=42,
+    )
+
+    assert calls == [
+        ("storage", [stored_file.resolve()]),
+        ("database", 42),
+    ]
+    assert result == {
+        "file_id": 42,
+        "original_name": "report.csv",
+        "database_deleted": True,
+        "storage_deleted": True,
+        "report_files_deleted": 0,
+        "physical_file_was_missing": False,
+    }
+    assert len(fake_session.info[file_service.PENDING_FILE_DELETIONS_KEY]) == 1
+
+
+def test_delete_actual_file_allows_missing_storage_file_for_stale_record(monkeypatch, tmp_path):
+    missing_file = tmp_path / "missing.csv"
+    fake_session = SimpleNamespace(info={})
+
+    monkeypatch.setattr(
+        file_service,
+        "read_file_by_id",
+        lambda session, file_id: SimpleNamespace(
+            original_name="missing.csv",
+            storage_path=str(missing_file),
+        ),
+    )
+    monkeypatch.setattr(file_service, "delete_file", lambda session, file_id: True)
+    monkeypatch.setattr(file_service, "get_report_storage_paths", lambda **kwargs: [])
+    monkeypatch.setattr(file_service, "stage_files_for_deletion", lambda paths: [])
+
+    result = delete_actual_file(
+        session=fake_session,
+        file_id=42,
+    )
+
+    assert result["database_deleted"] is True
+    assert result["storage_deleted"] is False
+    assert result["report_files_deleted"] == 0
+    assert result["physical_file_was_missing"] is True
+
+
+def test_delete_actual_file_raises_when_database_record_is_missing(monkeypatch):
+    delete_calls = []
+
+    monkeypatch.setattr(file_service, "read_file_by_id", lambda session, file_id: None)
+    monkeypatch.setattr(
+        file_service,
+        "delete_file",
+        lambda session, file_id: delete_calls.append(file_id),
+    )
+    monkeypatch.setattr(file_service, "get_report_storage_paths", lambda **kwargs: [])
+    monkeypatch.setattr(
+        file_service,
+        "stage_files_for_deletion",
+        lambda paths: delete_calls.append(paths),
+    )
+
+    with pytest.raises(FileNotFoundError, match="File record with ID 42 was not found"):
+        delete_actual_file(
+            session=SimpleNamespace(info={}),
+            file_id=42,
+        )
+
+    assert delete_calls == []
+
+
+def test_delete_actual_file_restores_staged_file_when_database_flush_fails(
+    monkeypatch,
+    tmp_path,
+):
+    stored_file = tmp_path / "unsafe.csv"
+    stored_file.write_text("name,score\nMenura,90")
+    staged_file = tmp_path / ".trash" / "unsafe.csv"
+    calls = []
+
+    monkeypatch.setattr(
+        file_service,
+        "read_file_by_id",
+        lambda session, file_id: SimpleNamespace(
+            original_name="unsafe.csv",
+            storage_path=str(stored_file),
+        ),
+    )
+
+    def fake_delete_file(session, file_id):
+        calls.append(("database", file_id))
+        raise RuntimeError("Database delete failed")
+
+    staged_deletions = [
+        StagedFileDeletion(
+            original_path=stored_file.resolve(),
+            staged_path=staged_file,
+        )
+    ]
+
+    monkeypatch.setattr(file_service, "delete_file", fake_delete_file)
+    monkeypatch.setattr(file_service, "get_report_storage_paths", lambda **kwargs: [])
+    monkeypatch.setattr(
+        file_service,
+        "stage_files_for_deletion",
+        lambda paths: staged_deletions,
+    )
+    monkeypatch.setattr(
+        file_service,
+        "restore_staged_files",
+        lambda deletions: calls.append(("restore", deletions)),
+    )
+
+    with pytest.raises(RuntimeError, match="Database delete failed"):
+        delete_actual_file(
+            session=SimpleNamespace(info={}),
+            file_id=42,
+        )
+
+    assert calls == [
+        ("database", 42),
+        ("restore", staged_deletions),
+    ]
