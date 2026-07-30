@@ -93,7 +93,7 @@ class AnalysisJob(Base):
         ),
         nullable=False,
     )
-
+ 
     status: Mapped[str] = mapped_column(
         String(30),
         default = "pending"

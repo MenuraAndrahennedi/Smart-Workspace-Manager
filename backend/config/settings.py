@@ -81,3 +81,7 @@ def time_now() -> datetime:
     return datetime.now(timezone.utc)
 
 TIME_SYSTEM_STARTED = time_now()
+
+MAX_CSV_ANALYSIS_SIZE_MB = MAX_UPLOAD_SIZE_MB
+MAX_CSV_ROWS=50000
+MAX_CSV_COLUMNS=200

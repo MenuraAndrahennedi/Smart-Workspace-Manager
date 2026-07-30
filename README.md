@@ -39,7 +39,7 @@ frontend/
 
 scripts/
   init_db.py       Creates database tables
-  migrate_day7_database.py
+  migrate_database.py
                    Backs up and upgrades a pre-Day-8 SQLite database
   sql_verifications/
                    Isolated ORM and raw-SQL verification scripts

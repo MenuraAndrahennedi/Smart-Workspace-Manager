@@ -3,7 +3,8 @@ from pathlib import Path
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from backend.database.models import AutomationLog, FileRecord, Report
+from backend.config.settings import time_now
+from backend.database.models import AnalysisJob, AutomationLog, FileRecord, Report
 
 def create_file(
     session: Session,
@@ -322,3 +323,56 @@ def get_recent_files(
     ).all()
 
     return recent_files
+
+
+def get_analysis_job_by_id(
+    session: Session,
+    job_id: int,
+) -> AnalysisJob | None:
+    return session.get(AnalysisJob, job_id)
+
+
+def create_analysis_job(
+    session: Session,
+    file_id: int,
+    requested_options: str | None = None,
+    status: str = "running",
+) -> AnalysisJob:
+    analysis_record = AnalysisJob(
+        file_id=file_id,
+        status=status,
+        requested_options=requested_options,
+    )
+    
+    session.add(analysis_record)
+    session.flush()
+    session.refresh(analysis_record)
+    
+    return analysis_record
+
+
+def update_analysis_job(
+    session: Session,
+    job_id: int,
+    *,
+    status: str,
+    summary: str | None = None,
+    error_message: str | None = None,
+) -> AnalysisJob:
+    analysis_job = get_analysis_job_by_id(session,job_id)
+
+    if analysis_job is None:
+        raise ValueError(
+            f"Analysis job with ID {job_id} was not found."
+        )
+
+    analysis_job.status = status
+    analysis_job.summary = summary
+    analysis_job.error_message = error_message
+
+    if status in {"completed", "failed"}:
+        analysis_job.completed_at = time_now()
+
+    session.flush()
+
+    return analysis_job

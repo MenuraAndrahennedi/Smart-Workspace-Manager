@@ -75,7 +75,5 @@ def format_file_size(size_bytes: int) -> str:
         return f"{size_bytes / 1024**3:.2f} GB"
     if size_bytes >= 1024**2:
         return f"{size_bytes / 1024**2:.2f} MB"
-    if size_bytes >= 1024:
-        return f"{size_bytes / 1024:.2f} KB"
-    return f"{size_bytes} bytes"
+    return f"{size_bytes / 1024:.2f} KB"
 
