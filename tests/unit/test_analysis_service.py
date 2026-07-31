@@ -1,8 +1,24 @@
+import json
+
 import pandas as pd
 import pytest
+from sqlalchemy import select
 
 from backend.config.settings import MAX_CSV_ANALYSIS_SIZE_MB
-from backend.services.analysis_service import CSVAnalysisResult, CSVAnalysisError, CSVLimitError, analyze_csv, analyze_dataframe, load_csv_with_limits
+from backend.database.models import AnalysisJob
+from backend.database.repositories import create_file
+from backend.services import analysis_service
+from backend.services.analysis_service import (
+    CSVAnalysisError,
+    CSVAnalysisResult,
+    CSVLimitError,
+    analyze_csv,
+    analyze_dataframe,
+    analyze_file_and_record_job,
+    filter_csv_data,
+    get_analyzable_csv_files,
+    load_csv_with_limits,
+)
 
 
 @pytest.fixture
@@ -11,6 +27,29 @@ def analysis_data_root(tmp_path, monkeypatch):
     data_root.mkdir()
     monkeypatch.setattr("backend.services.analysis_service.DATA_ROOT", data_root)
     return data_root
+
+
+@pytest.fixture
+def organized_analysis_csv(test_session, analysis_data_root):
+    csv_path = analysis_data_root / "organized.csv"
+    csv_path.write_text(
+        "name,age,city\n"
+        "Alice,22,Colombo\n"
+        "Bob,30,Kandy\n"
+        "Alicia,25,Galle\n",
+        encoding="utf-8",
+    )
+
+    return create_file(
+        session=test_session,
+        original_name="organized.csv",
+        stored_name="organized.csv",
+        extension="csv",
+        category="spreadsheets",
+        size_bytes=csv_path.stat().st_size,
+        storage_path=str(csv_path),
+        status="organized",
+    )
 
 # Test analyze_csv (load_csv_with_limits) - Invalid data
 def test_analyze_csv_invalid_encoding(analysis_data_root):
@@ -142,9 +181,6 @@ def test_analyze_dataframe_no_rows():
 
 
 # Test analyze_csv - valid data
-from backend.services import analysis_service
-
-
 def test_analyze_csv_valid(
     analysis_data_root,
 ):
@@ -178,3 +214,147 @@ def test_analyze_csv_valid(
     assert statistics.loc["name", "unique"] == 3
     assert statistics.loc["name", "top"] == "Alice"
     assert statistics.loc["name", "freq"] == 2
+
+
+def test_get_analyzable_csv_files_returns_only_organized_csv_files(
+    test_session,
+    analysis_data_root,
+    organized_analysis_csv,
+):
+    uploaded_path = analysis_data_root / "uploaded.csv"
+    uploaded_path.write_text("name\nAlice\n", encoding="utf-8")
+    create_file(
+        session=test_session,
+        original_name="uploaded.csv",
+        stored_name="uploaded.csv",
+        extension="csv",
+        category="spreadsheets",
+        size_bytes=uploaded_path.stat().st_size,
+        storage_path=str(uploaded_path),
+        status="uploaded",
+    )
+
+    workbook_path = analysis_data_root / "organized.xlsx"
+    workbook_path.write_bytes(b"not a real workbook")
+    create_file(
+        session=test_session,
+        original_name="organized.xlsx",
+        stored_name="organized.xlsx",
+        extension="xlsx",
+        category="spreadsheets",
+        size_bytes=workbook_path.stat().st_size,
+        storage_path=str(workbook_path),
+        status="organized",
+    )
+
+    result = get_analyzable_csv_files(test_session)
+
+    assert [file_record.id for file_record in result] == [
+        organized_analysis_csv.id
+    ]
+
+
+def test_analyze_file_and_record_job_marks_job_completed(
+    test_session,
+    organized_analysis_csv,
+):
+    recorded = analyze_file_and_record_job(
+        session=test_session,
+        file_id=organized_analysis_csv.id,
+        preview_rows=2,
+    )
+
+    job = test_session.get(AnalysisJob, recorded.job_id)
+
+    assert job is not None
+    assert job.status == "completed"
+    assert job.completed_at is not None
+    assert job.error_message is None
+    assert json.loads(job.requested_options) == {"preview_rows": 2}
+
+    summary = json.loads(job.summary)
+    assert summary["row_count"] == 3
+    assert summary["column_count"] == 3
+    assert summary["duplicate_count"] == 0
+    assert recorded.result.preview.shape == (2, 3)
+
+
+def test_analyze_file_and_record_job_marks_job_failed(
+    test_session,
+    organized_analysis_csv,
+    monkeypatch,
+):
+    def fail_analysis(*args, **kwargs):
+        raise CSVAnalysisError("Invalid CSV")
+
+    monkeypatch.setattr(analysis_service, "analyze_csv", fail_analysis)
+
+    with pytest.raises(CSVAnalysisError, match="Invalid CSV"):
+        analyze_file_and_record_job(
+            session=test_session,
+            file_id=organized_analysis_csv.id,
+        )
+
+    job = test_session.scalars(
+        select(AnalysisJob).order_by(AnalysisJob.id.desc())
+    ).first()
+
+    assert job is not None
+    assert job.status == "failed"
+    assert job.summary is None
+    assert job.error_message == "Invalid CSV"
+    assert job.completed_at is not None
+
+
+def test_filter_csv_data_supports_numeric_and_text_filters(
+    test_session,
+    organized_analysis_csv,
+):
+    numeric_result = filter_csv_data(
+        session=test_session,
+        file_id=organized_analysis_csv.id,
+        selected_columns=["name", "age"],
+        filter_column="age",
+        operator="Greater than",
+        filter_value="23",
+    )
+
+    text_result = filter_csv_data(
+        session=test_session,
+        file_id=organized_analysis_csv.id,
+        selected_columns=["name", "city"],
+        filter_column="name",
+        operator="Contains",
+        filter_value="ali",
+    )
+
+    assert numeric_result.to_dict("records") == [
+        {"name": "Bob", "age": 30},
+        {"name": "Alicia", "age": 25},
+    ]
+    assert text_result.to_dict("records") == [
+        {"name": "Alice", "city": "Colombo"},
+        {"name": "Alicia", "city": "Galle"},
+    ]
+
+
+def test_filter_csv_data_rejects_invalid_configuration(
+    test_session,
+    organized_analysis_csv,
+):
+    with pytest.raises(CSVAnalysisError, match="at least one column"):
+        filter_csv_data(
+            session=test_session,
+            file_id=organized_analysis_csv.id,
+            selected_columns=[],
+        )
+
+    with pytest.raises(CSVAnalysisError, match="valid numeric"):
+        filter_csv_data(
+            session=test_session,
+            file_id=organized_analysis_csv.id,
+            selected_columns=["age"],
+            filter_column="age",
+            operator="Equals",
+            filter_value="not-a-number",
+        )

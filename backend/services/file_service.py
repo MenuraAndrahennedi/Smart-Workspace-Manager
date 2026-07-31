@@ -28,13 +28,6 @@ from backend.config.settings import MAX_FILENAME_ATTEMPTS, MAX_UPLOAD_SIZE_BYTES
 
 logger = logging.getLogger(__name__)
 
-
-def validate_upload(filename: str, filesize_bytes: int) -> str:
-    cleaned_filename = validate_filename(filename)
-    validate_file_extension(cleaned_filename)
-    validate_file_size(filesize_bytes, MAX_UPLOAD_SIZE_BYTES)
-    return cleaned_filename
-
 @dataclass
 class FileUploadResult:
     file_id: int
@@ -44,6 +37,12 @@ class FileUploadResult:
     size_bytes: int
     saved_path: str
     status: str
+    
+def validate_upload(filename: str, filesize_bytes: int) -> str:
+    cleaned_filename = validate_filename(filename)
+    validate_file_extension(cleaned_filename)
+    validate_file_size(filesize_bytes, MAX_UPLOAD_SIZE_BYTES)
+    return cleaned_filename
 
 def upload_file(
     filename: str,

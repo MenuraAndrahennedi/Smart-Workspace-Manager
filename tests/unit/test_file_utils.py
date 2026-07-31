@@ -83,8 +83,8 @@ def test_generate_safe_filename_stays_within_filesystem_limit():
 @pytest.mark.parametrize(
     ("size_bytes", "expected"),
     [
-        (0, "0 bytes"),
-        (512, "512 bytes"),
+        (0, "0.00 KB"),
+        (512, f"{512/1024:.2f} KB"),
         (1024, "1.00 KB"),
         (1024**2, "1.00 MB"),
         (1024**3, "1.00 GB"),

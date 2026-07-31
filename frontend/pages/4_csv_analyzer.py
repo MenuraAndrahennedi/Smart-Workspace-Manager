@@ -19,9 +19,7 @@ st.set_page_config(
 )
 
 st.title("CSV Analyzer")
-st.caption(
-    "Select an organized CSV file and inspect its contents."
-)
+st.caption("Select an organized CSV file and inspect its contents.")
 
 
 
@@ -37,8 +35,7 @@ with get_db_session() as session:
         file_record.id: file_record
         for file_record in csv_files
     }
-
-    
+   
 
     with st.form("csv_analysis_form"):
         selected_file_id = st.selectbox(
