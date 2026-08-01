@@ -100,11 +100,11 @@ def test_day7_migration_rebuilds_schema_and_cleans_stale_rows(tmp_path):
             "SELECT status FROM automation_logs"
         ).fetchone() == ("failed",)
         assert {
-            row[6]
+            (row[2], row[6])
             for row in connection.execute(
                 "PRAGMA foreign_key_list(reports)"
             ).fetchall()
-        } == {"CASCADE"}
+        } == {("files", "CASCADE")}
         report_columns = {
             row[1]: row
             for row in connection.execute(
@@ -112,6 +112,18 @@ def test_day7_migration_rebuilds_schema_and_cleans_stale_rows(tmp_path):
             ).fetchall()
         }
         assert report_columns["file_id"][3] == 1
-        assert report_columns["analysis_job_id"][3] == 1
+        assert "analysis_job_id" not in report_columns
+        assert connection.execute(
+            """
+            SELECT id, file_id, report_type, storage_path, status
+            FROM reports
+            """
+        ).fetchone() == (
+            1,
+            1,
+            "summary",
+            "data/reports/summary.txt",
+            "completed",
+        )
     finally:
         connection.close()

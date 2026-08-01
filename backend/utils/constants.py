@@ -44,3 +44,11 @@ STORAGE_DIRECTORIES: Final[tuple[str, ...]] = (
     "models",
     "sample"
 )
+
+VALID_AGGREGATIONS: Final[dict[str, str]] = {
+    "Mean": "mean",
+    "Sum": "sum",
+    "Minimum": "min",
+    "Maximum": "max",
+    "Count": "count",
+}

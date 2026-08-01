@@ -126,12 +126,6 @@ class AnalysisJob(Base):
         back_populates="analysis_jobs",
     )
 
-    reports: Mapped[list["Report"]] = relationship(
-        back_populates="analysis_job",
-        passive_deletes=True,
-    )
-
-
 # Stores information about generated reports
 class Report(Base):
     __tablename__ = "reports"
@@ -146,15 +140,6 @@ class Report(Base):
         Integer,
         ForeignKey(
             "files.id",
-            ondelete="CASCADE",
-        ),
-        nullable=False,
-    )
-
-    analysis_job_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey(
-            "analysis_jobs.id",
             ondelete="CASCADE",
         ),
         nullable=False,
@@ -183,11 +168,6 @@ class Report(Base):
     file: Mapped["FileRecord"] = relationship(
         back_populates="reports",
     )
-
-    analysis_job: Mapped["AnalysisJob"] = relationship(
-        back_populates="reports",
-    )
-
 
 # Stores important application actions permanently in the database.
 class AutomationLog(Base):

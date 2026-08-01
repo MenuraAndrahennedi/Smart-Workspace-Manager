@@ -27,14 +27,11 @@ REPORTS_DDL = """
 CREATE TABLE reports (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     file_id INTEGER NOT NULL,
-    analysis_job_id INTEGER NOT NULL,
     report_type VARCHAR(30) NOT NULL,
     storage_path VARCHAR(500) NOT NULL UNIQUE,
     status VARCHAR(30) NOT NULL,
     created_at DATETIME NOT NULL,
-    FOREIGN KEY(file_id) REFERENCES files (id) ON DELETE CASCADE,
-    FOREIGN KEY(analysis_job_id) REFERENCES analysis_jobs (id)
-        ON DELETE CASCADE
+    FOREIGN KEY(file_id) REFERENCES files (id) ON DELETE CASCADE
 )
 """
 
@@ -70,10 +67,11 @@ def _has_current_cascade_schema(connection: sqlite3.Connection) -> bool:
     return (
         len(analysis_foreign_keys) == 1
         and analysis_foreign_keys[0][6].upper() == "CASCADE"
-        and len(report_foreign_keys) == 2
-        and all(row[6].upper() == "CASCADE" for row in report_foreign_keys)
+        and len(report_foreign_keys) == 1
+        and report_foreign_keys[0][2] == "files"
+        and report_foreign_keys[0][6].upper() == "CASCADE"
         and report_columns["file_id"][3] == 1
-        and report_columns["analysis_job_id"][3] == 1
+        and "analysis_job_id" not in report_columns
     )
 
 
@@ -94,11 +92,8 @@ def _rebuild_analysis_tables(connection: sqlite3.Connection) -> bool:
 
     if any(row["file_id"] is None for row in analysis_rows):
         raise ValueError("Cannot migrate an analysis job without a file ID.")
-    if any(
-        row["file_id"] is None or row["analysis_job_id"] is None
-        for row in report_rows
-    ):
-        raise ValueError("Cannot migrate a report with a missing foreign key.")
+    if any(row["file_id"] is None for row in report_rows):
+        raise ValueError("Cannot migrate a report without a file ID.")
 
     connection.execute("PRAGMA foreign_keys=OFF")
     connection.execute("BEGIN IMMEDIATE")
@@ -123,12 +118,21 @@ def _rebuild_analysis_tables(connection: sqlite3.Connection) -> bool:
             connection.executemany(
                 """
                 INSERT INTO reports (
-                    id, file_id, analysis_job_id, report_type,
-                    storage_path, status, created_at
+                    id, file_id, report_type, storage_path, status, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                [tuple(row) for row in report_rows],
+                [
+                    (
+                        row["id"],
+                        row["file_id"],
+                        row["report_type"],
+                        row["storage_path"],
+                        row["status"],
+                        row["created_at"],
+                    )
+                    for row in report_rows
+                ],
             )
         connection.commit()
     except Exception:

@@ -48,7 +48,6 @@ def test_delete_actual_file_cascades_analysis_jobs_and_reports(
 
     report = Report(
         file_id=file_record.id,
-        analysis_job_id=analysis_job.id,
         report_type="summary",
         storage_path=str(temporary_data_root / "reports" / "sales_summary.txt"),
         status="completed",
@@ -112,7 +111,6 @@ def test_delete_actual_file_restores_files_and_records_after_rollback(
     test_session.add(
         Report(
             file_id=file_record.id,
-            analysis_job_id=analysis_job.id,
             report_type="summary",
             storage_path=str(report_file),
             status="completed",

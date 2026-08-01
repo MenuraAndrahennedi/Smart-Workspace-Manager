@@ -362,9 +362,7 @@ def update_analysis_job(
     analysis_job = get_analysis_job_by_id(session,job_id)
 
     if analysis_job is None:
-        raise ValueError(
-            f"Analysis job with ID {job_id} was not found."
-        )
+        raise ValueError(f"Analysis job with ID {job_id} was not found.")
 
     analysis_job.status = status
     analysis_job.summary = summary
@@ -376,3 +374,47 @@ def update_analysis_job(
     session.flush()
 
     return analysis_job
+
+
+
+def create_report(
+    session: Session,
+    file_id: int,
+    report_type: str,
+    status: str,
+    report_path: str | None = None,
+) -> Report:
+    report = Report(
+        file_id=file_id,
+        report_type=report_type,
+        status=status,
+        storage_path=report_path,
+    )
+
+    session.add(report)
+    session.flush()
+
+    return report
+
+def update_report(
+    session: Session,
+    report_id: int,
+    *,
+    status: str,
+    report_path: str | None = None,
+) -> Report:
+    report = session.get(Report, report_id)
+
+    if report is None:
+        raise ValueError(
+            f"Report with ID {report_id} was not found."
+        )
+
+    report.status = status
+
+    if report_path is not None:
+        report.storage_path = report_path
+
+    session.flush()
+
+    return report
