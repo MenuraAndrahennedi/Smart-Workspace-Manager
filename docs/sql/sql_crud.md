@@ -1,32 +1,61 @@
-# SQL and SQLAlchemy Verification
+# SQL and SQLAlchemy Notes
 
-## 1. Purpose
+## Purpose
 
-The Smart Workspace Manager uses SQLAlchemy ORM in the real
-application. Raw SQL is used separately to understand and verify
-the equivalent database operations.
+Smart Workspace Manager uses SQLAlchemy ORM in the application. Raw SQL examples are kept as a learning reference for the equivalent database operations. Verification scripts use isolated temporary databases and do not modify the application database.
 
-## 2. Verification Databases
+## Core Tables and Relationships
 
-- `tmp_path/SQL_verification/orm_verification.db`
-- `tmp_path/SQL_verification/sql_verification.db`
+The primary metadata tables implemented through Day 11 are:
 
-The real application database is not modified during verification.
+- `files`: one record for each managed source file.
+- `analysis_jobs`: one record for each recorded CSV analysis operation.
+- `reports`: one record for each generated HTML or PDF report file.
+- `automation_logs`: persistent organization and workflow events.
+- `settings`: non-secret application settings.
+- `ml_models`: reserved metadata table for the Day 12 ML workflow.
 
-## 3. CREATE TABLE Equivalent
+Both analysis jobs and reports belong directly to a file:
 
-The `FileRecord` SQLAlchemy model represents the `files` table.
+```text
+files
+|-- analysis_jobs.file_id
+`-- reports.file_id
+```
 
-Important mappings:
+There is no foreign-key relationship between `analysis_jobs` and `reports`.
 
-- `primary_key=True` → `PRIMARY KEY`
-- `autoincrement=True` → automatically generated ID
-- `nullable=False` → `NOT NULL`
-- `unique=True` → `UNIQUE`
+Conceptual table definitions for the two file-owned records are:
 
-## 4. INSERT
+```sql
+CREATE TABLE analysis_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    requested_options TEXT,
+    summary TEXT,
+    error_message TEXT,
+    created_at DATETIME NOT NULL,
+    completed_at DATETIME,
+    FOREIGN KEY (file_id) REFERENCES files (id) ON DELETE CASCADE
+);
 
-### Raw SQL
+CREATE TABLE reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL,
+    report_type VARCHAR(30) NOT NULL,
+    storage_path VARCHAR(500) NOT NULL UNIQUE,
+    status VARCHAR(30) NOT NULL,
+    created_at DATETIME NOT NULL,
+    FOREIGN KEY (file_id) REFERENCES files (id) ON DELETE CASCADE
+);
+```
+
+SQLite foreign-key enforcement is enabled for every application database connection.
+
+## File CRUD
+
+### Insert a File
 
 ```sql
 INSERT INTO files (
@@ -53,18 +82,9 @@ VALUES (
 );
 ```
 
-### SQLAlchemy Equivalent
+SQLAlchemy repository equivalent: `create_file()`.
 
-`create_file()`
-
-### Verification
-
-The same file metadata is inserted into both verification databases.
-The saved records are read, normalised, and compared.
-
-## 5. SELECT by ID
-
-### Raw SQL
+### Select a File by ID
 
 ```sql
 SELECT *
@@ -72,19 +92,9 @@ FROM files
 WHERE id = :file_id;
 ```
 
-### SQLAlchemy Equivalent
+SQLAlchemy repository equivalent: `read_file_by_id()`.
 
-`read_file_by_id()`
-
-### Verification
-
-The raw SQL query and repository function both return one file
-record matching the primary-key value, or no record when the ID
-does not exist.
-
-## 6. SELECT All
-
-### Raw SQL
+### Select All Files
 
 ```sql
 SELECT *
@@ -92,19 +102,9 @@ FROM files
 ORDER BY created_at DESC, id DESC;
 ```
 
-### SQLAlchemy Equivalent
+SQLAlchemy repository equivalent: `get_all_files()`.
 
-`get_all_files()`
-
-### Verification
-
-Both approaches return file records ordered from newest to oldest.
-The descending ID provides deterministic ordering when records share
-the same `created_at` timestamp.
-
-## 7. UPDATE
-
-### Raw SQL
+### Update a File
 
 ```sql
 UPDATE files
@@ -117,54 +117,159 @@ SET
 WHERE id = :file_id;
 ```
 
-### SQLAlchemy Equivalent
+SQLAlchemy repository equivalents: `update_file()` and `update_file_location()`.
 
-`update_file()`
-
-### Verification
-
-The verification updates the same fields through raw SQL and
-through the repository function, then normalises the results and
-confirms both records contain the same values.
-
-## 8. DELETE
-
-### Raw SQL
+### Delete a File
 
 ```sql
 DELETE FROM files
 WHERE id = :file_id;
 ```
 
-### SQLAlchemy Equivalent
+SQLAlchemy repository equivalent: `delete_file()`.
 
-`delete_file()`
+Deleting a file record cascades to its `analysis_jobs` and `reports` rows. The higher-level `delete_actual_file()` service also stages and removes the source and report files from storage, restoring them if the database transaction rolls back.
 
-### Verification
+## File Search and Filtering
 
-Both approaches delete by primary key. After deletion,
-`read_file_by_id()` and the raw SQL select-by-ID query should both
-return no record.
+The repository builds a parameterized SQLAlchemy query with optional search, category, and status conditions. A simplified raw SQL equivalent is:
 
-## 9. Parameterised Queries
+```sql
+SELECT *
+FROM files
+WHERE (
+    :search_term = ''
+    OR original_name LIKE :search_pattern ESCAPE '\'
+    OR stored_name LIKE :search_pattern ESCAPE '\'
+)
+AND category IN (:categories)
+AND status IN (:statuses)
+ORDER BY updated_at DESC, id DESC;
+```
 
-Named placeholders such as `:file_id` receive values separately
-through `session.execute()`. This avoids unsafe string-built queries.
+SQLAlchemy repository equivalent: `query_files()`.
 
-## 10. Transactions
+Actual `IN` parameters are expanded safely by SQLAlchemy rather than inserted into a query string.
 
-Raw SQL is executed immediately inside the current transaction.
-`commit()` permanently saves changes, while `rollback()` cancels them.
+## Dashboard Aggregations
 
-## 11. Why the Application Uses SQLAlchemy
+### Count Files and Total Size
 
-SQLAlchemy provides:
+```sql
+SELECT
+    COUNT(id) AS total_files,
+    COALESCE(SUM(size_bytes), 0) AS total_size_bytes
+FROM files;
+```
 
-- reusable ORM models
-- database-independent connection handling
-- sessions and transactions
-- easier repository functions
-- future SQLite-to-Azure-SQL support
+SQLAlchemy repository equivalents: `count_files()` and `get_file_summary()`.
 
-Raw SQL remains useful for understanding queries, debugging,
-verification, joins, filtering, and aggregation.
+### Group by Category
+
+```sql
+SELECT
+    category,
+    COUNT(id) AS file_count,
+    COALESCE(SUM(size_bytes), 0) AS total_size_bytes
+FROM files
+GROUP BY category
+ORDER BY file_count DESC, category ASC;
+```
+
+SQLAlchemy repository equivalent: `group_files_by_category()`.
+
+### Group by Status
+
+```sql
+SELECT
+    status,
+    COUNT(id) AS file_count
+FROM files
+GROUP BY status
+ORDER BY status ASC;
+```
+
+SQLAlchemy repository equivalent: `group_files_by_status()`.
+
+## Analysis Job Metadata
+
+Create an analysis job before analysis and update it when the operation completes or fails:
+
+```sql
+INSERT INTO analysis_jobs (
+    file_id,
+    status,
+    requested_options,
+    created_at
+)
+VALUES (
+    :file_id,
+    'running',
+    :requested_options,
+    :created_at
+);
+
+UPDATE analysis_jobs
+SET
+    status = :status,
+    summary = :summary,
+    error_message = :error_message,
+    completed_at = :completed_at
+WHERE id = :job_id;
+```
+
+SQLAlchemy repository equivalents: `create_analysis_job()` and `update_analysis_job()`.
+
+## Report Metadata
+
+HTML and PDF outputs receive separate records. Each record points to the same source file but has its own type, path, and status:
+
+```sql
+INSERT INTO reports (
+    file_id,
+    report_type,
+    storage_path,
+    status,
+    created_at
+)
+VALUES (
+    :file_id,
+    :report_type,
+    :storage_path,
+    'pending',
+    :created_at
+);
+
+UPDATE reports
+SET
+    status = :status,
+    storage_path = :storage_path
+WHERE id = :report_id;
+```
+
+SQLAlchemy repository equivalents: `create_report()` and `update_report()`.
+
+## Parameterized Queries
+
+Placeholders such as `:file_id` receive values separately from SQL text. This prevents user input from changing the structure of the SQL statement. SQLAlchemy expressions and repository functions provide the same separation in application code.
+
+## Transactions
+
+Database operations run inside a SQLAlchemy session transaction:
+
+- `flush()` sends pending SQL while keeping the transaction open.
+- `commit()` permanently saves the transaction.
+- `rollback()` cancels database changes.
+
+Storage-changing services coordinate filesystem staging with the database transaction so failed deletions can restore moved files.
+
+## Verification Scripts
+
+The scripts below compare selected raw SQL and SQLAlchemy results using isolated databases:
+
+```powershell
+python scripts/sql_verifications/sql_crud_verification.py
+python scripts/sql_verifications/sql_query_verification.py
+```
+
+Automated integration coverage is located in `tests/integration/test_sql_verification.py`.
