@@ -60,6 +60,14 @@ def test_resolve_data_path(tmp_path):
     assert result == expected.resolve()
 
 
+def test_resolve_data_path_rejects_escape(tmp_path):
+    data_path = tmp_path / "data"
+    data_path.mkdir()
+
+    with pytest.raises(ValueError, match="escape the data root"):
+        resolve_data_path(data_path, ["..", "outside.csv"])
+
+
 # Test file_exists & directory_exists
 def test_file_exists_and_directory_exists(tmp_path):
     new_existing_folder = tmp_path / "existing_folder"

@@ -1,15 +1,12 @@
-from pathlib import Path
-import sys
+import logging
 
 import streamlit as st
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(PROJECT_ROOT))
 
 from backend.database.db import get_db_session
 from backend.services.dashboard_service import get_dashboard_data
 from backend.utils.file_utils import format_file_size
+
+logger = logging.getLogger(__name__)
 
 st.set_page_config(
     page_title="Dashboard", 
@@ -69,12 +66,23 @@ try:
 
     st.subheader("Category Summary")
     category_summary = dashboard_data["category_summary"]
-    st.table(
-        category_summary,
-        border = "horizontal"
+    category_table = [
+        {
+            "Category": item["category"].replace("_", " ").title(),
+            "File count": item["file_count"],
+            "Total size (MB)": item["total_size_bytes"] / (1024**2),
+        }
+        for item in category_summary
+    ]
+    st.dataframe(
+        category_table,
+        hide_index=True,
+        column_config={
+            "Total size (MB)": st.column_config.NumberColumn(format="%.2f"),
+        },
     )
 
 except Exception:
-    st.error("Dashboard information could not be loaded.")
+    logger.exception("Could not load dashboard information.")
+    st.error("Dashboard information could not be loaded. Please try again.")
     st.stop()
-

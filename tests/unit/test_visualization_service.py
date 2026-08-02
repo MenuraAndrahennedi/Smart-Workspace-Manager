@@ -115,7 +115,7 @@ def test_get_chart_selection_options_matches_supported_column_types():
 
 
 def test_get_chart_selection_options_rejects_dataframe_without_columns():
-    with pytest.raises(VisualizationError, match="do not have columns"):
+    with pytest.raises(VisualizationError, match="does not contain any chartable columns"):
         get_chart_selection_options(pd.DataFrame())
 
 
@@ -196,6 +196,111 @@ def test_generate_chart_creates_supported_chart_types(
     assert isinstance(result.figure, go.Figure)
     assert result.figure.data[0].type == expected_trace_type
     assert result.plotted_row_count == expected_rows
+
+
+@pytest.mark.parametrize(
+    ("aggregation", "expected_values"),
+    [
+        ("Mean", [15.0, 5.0]),
+        ("Sum", [30.0, 5.0]),
+        ("Minimum", [10.0, 5.0]),
+        ("Maximum", [20.0, 5.0]),
+        ("Count", [2, 1]),
+    ],
+)
+def test_bar_chart_supports_every_aggregation(
+    aggregation,
+    expected_values,
+):
+    dataframe = pd.DataFrame(
+        {
+            "region": ["North", "North", "South"],
+            "sales": [10.0, 20.0, 5.0],
+        }
+    )
+
+    result = generate_chart(
+        dataframe,
+        ChartConfiguration(
+            chart_type="bar",
+            title=f"{aggregation} sales",
+            x_column="region",
+            y_column="sales",
+            aggregation=aggregation,
+        ),
+    )
+
+    assert list(result.figure.data[0].y) == expected_values
+
+
+def test_line_chart_accepts_numeric_x_and_sorts_data():
+    dataframe = pd.DataFrame(
+        {
+            "sequence": [3, 1, 2],
+            "sales": [30.0, 10.0, 20.0],
+        }
+    )
+
+    result = generate_chart(
+        dataframe,
+        ChartConfiguration(
+            chart_type="line",
+            title="Ordered sales",
+            x_column="sequence",
+            y_column="sales",
+        ),
+    )
+
+    assert list(result.figure.data[0].x) == [1, 2, 3]
+    assert list(result.figure.data[0].y) == [10.0, 20.0, 30.0]
+
+
+def test_scatter_chart_rejects_identical_x_and_y_columns():
+    dataframe = pd.DataFrame({"sales": [10.0, 20.0]})
+
+    with pytest.raises(VisualizationError, match="different columns"):
+        generate_chart(
+            dataframe,
+            ChartConfiguration(
+                chart_type="scatter",
+                title="Invalid scatter",
+                x_column="sales",
+                y_column="sales",
+            ),
+        )
+
+
+def test_chart_generation_does_not_modify_source_dataframe():
+    dataframe = pd.DataFrame(
+        {
+            "region": ["North", "South", "North"],
+            "sequence": [3, 1, 2],
+            "sales": [30.0, 10.0, 20.0],
+            "profit": [3.0, 1.0, 2.0],
+        }
+    )
+    original = dataframe.copy(deep=True)
+    configurations = [
+        ChartConfiguration("histogram", "Histogram", x_column="sales"),
+        ChartConfiguration("bar", "Bar", x_column="region"),
+        ChartConfiguration(
+            "line",
+            "Line",
+            x_column="sequence",
+            y_column="sales",
+        ),
+        ChartConfiguration(
+            "scatter",
+            "Scatter",
+            x_column="sales",
+            y_column="profit",
+        ),
+    ]
+
+    for configuration in configurations:
+        generate_chart(dataframe, configuration)
+
+    pd.testing.assert_frame_equal(dataframe, original)
 
 
 def test_generate_chart_rejects_invalid_configurations():
@@ -302,15 +407,13 @@ def test_generate_chart_enforces_bar_category_limit(monkeypatch):
 
 
 @pytest.fixture
-def visualization_csv_file(test_session, tmp_path, monkeypatch):
-    data_root = tmp_path / "data"
-    data_root.mkdir()
+def visualization_csv_file(test_session, temporary_data_root):
+    data_root = temporary_data_root
     csv_path = data_root / "visualization.csv"
     csv_path.write_text(
         "region,sales\nNorth,10\nSouth,20\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(analysis_service, "DATA_ROOT", data_root)
 
     return create_file(
         session=test_session,

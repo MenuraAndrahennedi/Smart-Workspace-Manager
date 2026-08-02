@@ -70,11 +70,11 @@ def test_validate_file_size_rejects_non_int_size():
 # Test get_file_category
 def test_get_file_category_returns_spreadsheet_for_csv():
     result = get_file_category("sales.csv")
-    assert result == "spreadsheet"
+    assert result == "spreadsheets"
 
 def test_get_file_category_returns_image_for_png():
     result = get_file_category("profile.png")
-    assert result == "image"
+    assert result == "images"
 
 def test_get_file_category_rejects_unsupported_file():
     with pytest.raises(ValueError):

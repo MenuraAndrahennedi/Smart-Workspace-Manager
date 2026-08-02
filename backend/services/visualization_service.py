@@ -7,8 +7,7 @@ import plotly.graph_objects as go
 from sqlalchemy.orm import Session
 
 from backend.config.settings import MAX_BAR_CATEGORIES, MAX_CHART_ROWS
-from backend.database.repositories import read_file_by_id
-from backend.services.analysis_service import load_csv_with_limits
+from backend.services.analysis_service import CSVAnalysisError, load_organized_csv
 from backend.utils.constants import VALID_AGGREGATIONS
 
 @dataclass(frozen=True)
@@ -102,7 +101,7 @@ def get_chart_selection_options(
     dataframe: pd.DataFrame,
 ) -> ChartSelectionOptions:
     if not dataframe.shape[1]:
-        raise VisualizationError("Selected CSV file do not have columns to get charts")
+        raise VisualizationError("The selected CSV does not contain any chartable columns.")
 
     numerical_cols = dataframe.select_dtypes(include="number").columns.tolist()
     datetime_cols = [
@@ -300,7 +299,7 @@ def _create_scatter_chart(
             title=configuration.title,
         )
     else:
-        raise VisualizationError(f"Cannot scatter plot the similar {x_column} and {y_column}")
+        raise VisualizationError("Select different columns for the scatter chart axes.")
 
     return figure, chart_data.shape[0]
 
@@ -311,7 +310,7 @@ def generate_chart(
     configuration: ChartConfiguration,
 ) -> GeneratedChart:
     if not configuration:
-        raise VisualizationError("Invalid chart configuration")
+        raise VisualizationError("The chart configuration is incomplete or invalid.")
 
     chart_type = configuration.chart_type.lower()
 
@@ -341,15 +340,10 @@ def generate_chart_for_file(
     file_id: int,
     configuration: ChartConfiguration,
 ) -> GeneratedChart:
-    file_record = read_file_by_id(session, file_id)
-
-    if file_record is None:
-        raise VisualizationError("The selected file does not exist.")
-    
-    if file_record.status.lower() != "organized":
-        raise VisualizationError("Selected CSV file is not organized yet.")
-        
-    df = load_csv_with_limits(file_record.storage_path)
+    try:
+        _, df = load_organized_csv(session, file_id)
+    except CSVAnalysisError as error:
+        raise VisualizationError(str(error)) from error
 
     result: GeneratedChart = generate_chart(df, configuration)
 

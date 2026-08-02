@@ -30,11 +30,7 @@ def test_detect_file_category_valid(filename, expected_category):
 def test_build_destination_directory_valid(monkeypatch, tmp_path):
     fixed_date = datetime(2026, 7, 27)
 
-    monkeypatch.setattr(
-        automation_service,
-        "DATA_ROOT",
-        tmp_path,
-    )
+    monkeypatch.setattr("backend.config.settings.DATA_ROOT", tmp_path)
 
     result = build_destination_directory(
         category="spreadsheets",

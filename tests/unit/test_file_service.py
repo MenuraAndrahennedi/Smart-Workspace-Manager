@@ -5,10 +5,66 @@ from types import SimpleNamespace
 import backend.services.file_service as file_service
 from backend.services.storage_service import StagedFileDeletion
 from backend.services.file_service import (
+    UploadValidationError,
     delete_actual_file,
+    get_download_path,
+    get_library_files,
+    read_managed_file_bytes,
     validate_upload,
     upload_file
 )
+
+
+def test_get_download_path_returns_managed_file_and_rejects_missing_file(
+    temporary_data_root,
+    monkeypatch,
+):
+    managed_file = temporary_data_root / "processed" / "report.csv"
+    managed_file.parent.mkdir(parents=True)
+    managed_file.write_text("content")
+    assert get_download_path(managed_file) == managed_file.resolve()
+    assert read_managed_file_bytes(managed_file) == b"content"
+
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        get_download_path(temporary_data_root / "missing.csv")
+
+
+def test_get_download_path_rejects_file_outside_data_root(
+    temporary_data_root,
+    tmp_path,
+    monkeypatch,
+):
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("outside")
+    with pytest.raises(ValueError, match="not related to data root"):
+        get_download_path(outside_file)
+
+
+def test_get_library_files_uses_repository_filters(monkeypatch):
+    fake_session = SimpleNamespace()
+    expected_records = [SimpleNamespace(id=1)]
+    received_arguments = {}
+
+    def fake_query_files(**kwargs):
+        received_arguments.update(kwargs)
+        return expected_records
+
+    monkeypatch.setattr(file_service, "query_files", fake_query_files)
+
+    result = get_library_files(
+        session=fake_session,
+        search_term="report",
+        category=["pdf"],
+        status=["organized"],
+    )
+
+    assert result == expected_records
+    assert received_arguments == {
+        "session": fake_session,
+        "search_term": "report",
+        "category": ["pdf"],
+        "status": ["organized"],
+    }
 
 
 def test_validate_upload():
@@ -16,16 +72,16 @@ def test_validate_upload():
     assert valid_result == "report.csv"
     assert validate_upload("  report.csv  ", 5) == "report.csv"
 
-    with pytest.raises(ValueError):
+    with pytest.raises(UploadValidationError, match="selected file is empty"):
         validate_upload("report.csv", 0)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(UploadValidationError, match="Filename cannot be empty"):
         validate_upload(" ", 5)
     
-    with pytest.raises(ValueError):
+    with pytest.raises(UploadValidationError, match="'.exe' extension"):
         validate_upload("report.exe", 5)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(UploadValidationError, match="selected file is empty"):
         validate_upload("report.pdf", 0)
 
 
@@ -55,7 +111,7 @@ def test_successful_upload_file(monkeypatch):
         assert original_name == "report.csv"
         assert stored_name == "report_12345678.csv"
         assert extension == "csv"
-        assert category == "spreadsheet"
+        assert category == "spreadsheets"
         assert size_bytes == len(file_bytes)
         assert storage_path == str(fake_saved_path)
         return SimpleNamespace(id=42, status="uploaded")

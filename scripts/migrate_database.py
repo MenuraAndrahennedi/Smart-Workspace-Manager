@@ -237,6 +237,9 @@ def organize_remaining_uploads() -> list[int]:
 def main() -> None:
     from backend.config.settings import DATA_ROOT
     from backend.database.db import engine
+    from backend.utils.logging_config import configure_logging
+
+    configure_logging()
 
     database_path = Path(engine.url.database or "")
     if not database_path.is_absolute():

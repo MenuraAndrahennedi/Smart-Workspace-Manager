@@ -41,7 +41,6 @@ STORAGE_DIRECTORIES: Final[tuple[str, ...]] = (
     "processed/pdf",
     "processed/others",
     "reports",
-    "models",
     "sample"
 )
 

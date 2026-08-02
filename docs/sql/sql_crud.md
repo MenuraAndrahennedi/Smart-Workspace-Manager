@@ -6,14 +6,13 @@ Smart Workspace Manager uses SQLAlchemy ORM in the application. Raw SQL examples
 
 ## Core Tables and Relationships
 
-The primary metadata tables implemented through Day 11 are:
+The Phase 1 metadata tables are:
 
 - `files`: one record for each managed source file.
 - `analysis_jobs`: one record for each recorded CSV analysis operation.
 - `reports`: one record for each generated HTML or PDF report file.
 - `automation_logs`: persistent organization and workflow events.
 - `settings`: non-secret application settings.
-- `ml_models`: reserved metadata table for the Day 12 ML workflow.
 
 Both analysis jobs and reports belong directly to a file:
 

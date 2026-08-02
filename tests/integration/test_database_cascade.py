@@ -1,8 +1,10 @@
-from sqlalchemy import func, select
-from sqlalchemy.orm import sessionmaker
+import pytest
+from sqlalchemy import func, inspect, select
+from sqlalchemy.orm import Session, sessionmaker
 
 import backend.database.db as database_db
 from backend.database.db import (
+    Base,
     _finalize_pending_file_deletions,
     _restore_pending_file_deletions,
 )
@@ -18,6 +20,52 @@ def test_test_database_enables_sqlite_foreign_keys(test_engine) -> None:
         ).scalar_one()
 
     assert foreign_keys_enabled == 1
+
+
+def test_database_initialization_creates_all_model_tables(test_engine) -> None:
+    assert set(inspect(test_engine).get_table_names()) == set(
+        Base.metadata.tables
+    )
+
+
+def test_db_session_rolls_back_and_closes_after_failure(
+    test_engine,
+    monkeypatch,
+) -> None:
+    sessions = []
+
+    class TrackingSession(Session):
+        was_closed = False
+
+        def close(self) -> None:
+            self.was_closed = True
+            super().close()
+
+    def create_tracking_session():
+        session = TrackingSession(bind=test_engine)
+        sessions.append(session)
+        return session
+
+    monkeypatch.setattr(database_db, "SessionLocal", create_tracking_session)
+
+    with pytest.raises(RuntimeError, match="force rollback"):
+        with database_db.get_db_session() as session:
+            create_file(
+                session=session,
+                original_name="rollback.csv",
+                stored_name="rollback.csv",
+                extension="csv",
+                category="spreadsheets",
+                size_bytes=10,
+                storage_path="uploads/rollback.csv",
+            )
+            raise RuntimeError("force rollback")
+
+    assert sessions[0].was_closed is True
+    with Session(test_engine) as check_session:
+        assert check_session.scalar(
+            select(func.count()).select_from(FileRecord)
+        ) == 0
 
 
 def test_delete_actual_file_cascades_analysis_jobs_and_reports(

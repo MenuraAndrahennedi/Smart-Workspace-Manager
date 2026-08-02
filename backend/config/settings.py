@@ -1,9 +1,9 @@
-from datetime import datetime, timezone
 import os 
 from pathlib import Path
 from dotenv import load_dotenv
 
 from backend.utils.file_utils import PROJECT_ROOT, get_or_create_path
+from backend.utils.time_utils import time_now
 
 ENV_FILE = PROJECT_ROOT / ".env"
 ACCEPTED_LOG_VALUES: list[str] = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL","NOTSET"]
@@ -73,12 +73,6 @@ MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 STORAGE_PROVIDER = get_valid_storage_provider("STORAGE_PROVIDER")
 LOG_LEVEL = get_log_value_accepted("LOG_LEVEL")
 MAX_FILENAME_ATTEMPTS = get_positive_int("MAX_FILENAME_ATTEMPTS")
-
-
-
-
-def time_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 TIME_SYSTEM_STARTED = time_now()
 

@@ -1,16 +1,13 @@
-from pathlib import Path
-import sys
+import logging
+
 import pandas as pd
 import streamlit as st
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(PROJECT_ROOT))
-
 from backend.database.db import get_db_session
-from backend.services.analysis_service import CSVAnalysisError, CSVLimitError, analyze_file_and_record_job, get_analyzable_csv_files, filter_csv_data
-from backend.utils.file_utils import format_file_size
+from backend.services.analysis_service import CSVAnalysisError, CSVLimitError, analyze_file_and_record_job, filter_csv_data
+from frontend.ui_helpers import commit_session_changes, select_analyzable_csv
 
+logger = logging.getLogger(__name__)
 
 st.set_page_config(
     page_title="CSV Analyzer", 
@@ -24,24 +21,10 @@ st.caption("Select an organized CSV file and inspect its contents.")
 
 
 with get_db_session() as session:
-    csv_files = get_analyzable_csv_files(session)
-
-    if not csv_files:
-        st.info("No organized CSV files are available for analysis.")
-        st.stop()
-
-    # Lookup dictionary
-    file_lookup = {
-        file_record.id: file_record
-        for file_record in csv_files
-    }
-   
-
     with st.form("csv_analysis_form"):
-        selected_file_id = st.selectbox(
-            "Select CSV file",
-            options=list(file_lookup.keys()),
-            format_func=lambda file_id: f"{file_lookup[file_id].original_name} - {format_file_size(file_lookup[file_id].size_bytes)}" ,
+        selected_file_id = select_analyzable_csv(
+            session,
+            empty_message="No organized CSV files are available for analysis.",
         )
         
         preview_rows = st.number_input(
@@ -78,20 +61,43 @@ with get_db_session() as session:
                         )
                     )
 
-                st.session_state["csv_analysis_result"] = (recorded_analysis.result)
-                st.session_state["analyzed_file_id"] = (selected_file_id)
-                st.session_state["analysis_job_id"] = (recorded_analysis.job_id)
-
-                st.success(f"File analyzed successfully. Analysis job ID: {recorded_analysis.job_id}")
+                if commit_session_changes(
+                    session,
+                    logger,
+                    "The analysis completed, but its database record could not be saved.",
+                ):
+                    st.session_state["csv_analysis_result"] = recorded_analysis.result
+                    st.session_state["analyzed_file_id"] = selected_file_id
+                    st.session_state["analysis_job_id"] = recorded_analysis.job_id
+                    st.success(f"File analyzed successfully. Analysis job ID: {recorded_analysis.job_id}")
 
             except CSVLimitError as error:
-                st.warning(str(error))
+                if commit_session_changes(
+                    session,
+                    logger,
+                    "The analysis failure could not be recorded.",
+                ):
+                    st.warning(str(error))
 
             except CSVAnalysisError as error:
-                st.error(str(error))
+                if commit_session_changes(
+                    session,
+                    logger,
+                    "The analysis failure could not be recorded.",
+                ):
+                    st.error(str(error))
 
             except Exception:
-                st.error("An unexpected error occurred while analyzing the CSV.")
+                logger.exception(
+                    "Unexpected analysis failure for file ID %s.",
+                    selected_file_id,
+                )
+                if commit_session_changes(
+                    session,
+                    logger,
+                    "The analysis failure could not be recorded.",
+                ):
+                    st.error("An unexpected error occurred while analyzing the CSV.")
 
     result = st.session_state.get("csv_analysis_result")
     analyzed_file_id = st.session_state.get("analyzed_file_id")
@@ -269,8 +275,16 @@ with get_db_session() as session:
                     st.session_state["filtered_csv_data"] = (filtered_dataframe)
                     st.session_state["filtered_csv_configuration"] = (current_filter_configuration)
 
-                except Exception as error:
+                except CSVLimitError as error:
                     st.warning(str(error))
+                except CSVAnalysisError as error:
+                    st.error(str(error))
+                except Exception:
+                    logger.exception(
+                        "Unexpected filtering failure for file ID %s.",
+                        analyzed_file_id,
+                    )
+                    st.error("The CSV filter could not be applied. Please try again.")
 
         filtered_dataframe = st.session_state.get("filtered_csv_data")
         applied_configuration = st.session_state.get("filtered_csv_configuration")

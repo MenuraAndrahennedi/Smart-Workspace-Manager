@@ -8,14 +8,14 @@ from matplotlib.figure import Figure
 
 from sqlalchemy.orm import Session
 
-from backend.config.settings import DATA_ROOT, MAX_REPORT_CHARTS, time_now
+from backend.config import settings
+from backend.config.settings import MAX_REPORT_CHARTS
 from backend.database.models import FileRecord
 from backend.database.repositories import (
     create_report as create_report_record,
-    read_file_by_id,
     update_report,
 )
-from backend.services.analysis_service import load_csv_with_limits
+from backend.services.analysis_service import CSVAnalysisError, load_organized_csv
 from backend.services.visualization_service import (
     ChartConfiguration,
     GeneratedChart,
@@ -23,10 +23,10 @@ from backend.services.visualization_service import (
     generate_chart,
 )
 from backend.utils.file_utils import (
-    ensure_directory,
-    file_exists,
+    ensure_dated_directory,
     generate_safe_filename,
 )
+from backend.utils.time_utils import time_now
 
 class ReportGenerationError(Exception):
     pass
@@ -43,22 +43,6 @@ class SavedReportResult:
     html_report_filename: str
     pdf_report_filename: str
     chart_count: int
-
-def _validate_source_file(file_record: FileRecord | None) -> FileRecord:
-    if file_record is None:
-        raise ReportGenerationError("The selected file does not exist.")
-
-    if file_record.extension.lstrip(".").lower() != "csv":
-        raise ReportGenerationError("The selected file must be a CSV file.")
-
-    if file_record.status.lower() != "organized":
-        raise ReportGenerationError("The selected CSV file must be organized.")
-
-    if not file_exists(file_record.storage_path):
-        raise ReportGenerationError("The source CSV file does not exist.")
-
-    return file_record
-
 
 def _generate_report_charts(
     dataframe,
@@ -79,16 +63,23 @@ def _generate_report_charts(
 
 def _build_html_report(
     file_record: FileRecord,
+    dataframe,
     charts: list[GeneratedChart],
 ) -> str:
     chart_sections = []
     for index, chart in enumerate(charts):
         chart_sections.append(
-            chart.figure.to_html(
+            "<section>"
+            f"<h2>{escape(chart.configuration.title)}</h2>"
+            + chart.figure.to_html(
                 full_html=False,
                 include_plotlyjs="cdn" if index == 0 else False,
             )
+            + "</section>"
         )
+
+    total_missing_values = int(dataframe.isna().sum().sum())
+    duplicate_rows = int(dataframe.duplicated().sum())
 
     return f"""<!doctype html>
         <html lang="en">
@@ -99,6 +90,15 @@ def _build_html_report(
         </head>
         <body>
             <h1>{escape(file_record.original_name)} report</h1>
+            <section>
+                <h2>Dataset summary</h2>
+                <ul>
+                    <li>Rows: {dataframe.shape[0]}</li>
+                    <li>Columns: {dataframe.shape[1]}</li>
+                    <li>Missing values: {total_missing_values}</li>
+                    <li>Duplicate rows: {duplicate_rows}</li>
+                </ul>
+            </section>
             {''.join(chart_sections)}
         </body>
         </html>
@@ -166,27 +166,32 @@ def create_report(
     if len(chart_configurations) > MAX_REPORT_CHARTS:
         raise ReportGenerationError(f"A report can contain no more than {MAX_REPORT_CHARTS} charts.")
 
-    file_record = read_file_by_id(session, file_id)
-    file_record = _validate_source_file(file_record)
-
     try:
-        dataframe = load_csv_with_limits(Path(file_record.storage_path))
+        file_record, dataframe = load_organized_csv(session, file_id)
+    except CSVAnalysisError as error:
+        raise ReportGenerationError(str(error)) from error
     except Exception as error:
         raise ReportGenerationError(
-            f"The source CSV could not be loaded: {error}"
+            "The source CSV could not be loaded."
         ) from error
 
     charts = _generate_report_charts(dataframe, chart_configurations)
-    report_html = _build_html_report(file_record, charts)
+    report_html = _build_html_report(file_record, dataframe, charts)
 
     if date_value is None:
         date_value = time_now()
 
-    html_report_directory = ensure_directory(DATA_ROOT / "reports" / "html" / date_value.strftime("%Y") / date_value.strftime("%m"))
+    html_report_directory = ensure_dated_directory(
+        settings.DATA_ROOT / "reports" / "html",
+        date_value,
+    )
     html_report_filename = generate_safe_filename(f"{Path(file_record.original_name).stem}_report.html")
     html_report_path = html_report_directory / html_report_filename
 
-    pdf_report_directory = ensure_directory(DATA_ROOT / "reports" / "pdf" / date_value.strftime("%Y") / date_value.strftime("%m"))
+    pdf_report_directory = ensure_dated_directory(
+        settings.DATA_ROOT / "reports" / "pdf",
+        date_value,
+    )
     pdf_report_filename = generate_safe_filename(f"{Path(file_record.original_name).stem}_report.pdf")
     pdf_report_path = pdf_report_directory / pdf_report_filename
 

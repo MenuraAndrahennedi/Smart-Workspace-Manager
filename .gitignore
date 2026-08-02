@@ -17,7 +17,7 @@ htmlcov/
 data/uploads/*
 data/processed/*
 data/reports/*
-data/models/*
+data/logs/*
 *.db
 *.sqlite
 *.sqlite3
@@ -26,7 +26,6 @@ data/models/*
 !data/uploads/.gitkeep
 !data/processed/.gitkeep
 !data/reports/.gitkeep
-!data/models/.gitkeep
 
 # Jupyter
 .ipynb_checkpoints/

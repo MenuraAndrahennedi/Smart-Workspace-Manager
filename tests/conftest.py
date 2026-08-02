@@ -13,7 +13,6 @@ def temporary_data_root(tmp_path, monkeypatch):
     data_root.mkdir()
 
     monkeypatch.setattr("backend.config.settings.DATA_ROOT", data_root)
-    monkeypatch.setattr("backend.services.storage_service.DATA_ROOT", data_root)
 
     return data_root
 

@@ -14,19 +14,26 @@ from backend.services.storage_service import (
     PENDING_FILE_DELETIONS_KEY,
     delete_stored_file,
     restore_staged_files,
+    resolve_managed_path,
     save_uploaded_bytes,
     stage_files_for_deletion,
 )
 from backend.utils.file_utils import generate_safe_filename
+from backend.database.models import FileRecord
 from backend.database.repositories import (
     create_file,
     delete_file,
     get_report_storage_paths,
+    query_files,
     read_file_by_id,
 )
 from backend.config.settings import MAX_FILENAME_ATTEMPTS, MAX_UPLOAD_SIZE_BYTES
 
 logger = logging.getLogger(__name__)
+
+
+class UploadValidationError(ValueError):
+    pass
 
 @dataclass
 class FileUploadResult:
@@ -37,12 +44,41 @@ class FileUploadResult:
     size_bytes: int
     saved_path: str
     status: str
+
+
+def get_download_path(storage_path: str | Path) -> Path:
+    return resolve_managed_path(
+        storage_path,
+        must_exist=True,
+        file_only=True,
+    )
+
+
+def read_managed_file_bytes(storage_path: str | Path) -> bytes:
+    return get_download_path(storage_path).read_bytes()
+
+
+def get_library_files(
+    session: Session,
+    search_term: str | None = None,
+    category: str | list[str] | None = None,
+    status: str | list[str] | None = None,
+) -> list[FileRecord]:
+    return query_files(
+        session=session,
+        search_term=search_term,
+        category=category,
+        status=status,
+    )
     
 def validate_upload(filename: str, filesize_bytes: int) -> str:
-    cleaned_filename = validate_filename(filename)
-    validate_file_extension(cleaned_filename)
-    validate_file_size(filesize_bytes, MAX_UPLOAD_SIZE_BYTES)
-    return cleaned_filename
+    try:
+        cleaned_filename = validate_filename(filename)
+        validate_file_extension(cleaned_filename)
+        validate_file_size(filesize_bytes, MAX_UPLOAD_SIZE_BYTES)
+        return cleaned_filename
+    except (TypeError, ValueError) as error:
+        raise UploadValidationError(str(error)) from error
 
 def upload_file(
     filename: str,

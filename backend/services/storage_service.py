@@ -3,7 +3,7 @@ from pathlib import Path
 import shutil
 import uuid
 
-from backend.config.settings import DATA_ROOT, STORAGE_PROVIDER
+from backend.config import settings
 from backend.utils.file_utils import ensure_directory, file_exists
 from backend.utils.constants import STORAGE_DIRECTORIES
 
@@ -17,25 +17,38 @@ class StagedFileDeletion:
 
 
 def get_storage_root():
-    return ensure_directory(DATA_ROOT)
+    return ensure_directory(settings.DATA_ROOT)
 
-def resolve_storage_path(path: Path | str) -> Path:
-    if isinstance(path,str): path = Path(path)
 
-    if path.is_absolute():
-        raise ValueError("Storage path must be relative")
-    else:
-        storage_root = get_storage_root()
-        candidate_path = (storage_root.joinpath(path)).resolve()
+def resolve_managed_path(
+    path: Path | str,
+    *,
+    must_exist: bool = False,
+    file_only: bool = False,
+) -> Path:
+    storage_root = get_storage_root().resolve()
+    candidate_path = Path(path)
+    if not candidate_path.is_absolute():
+        candidate_path = storage_root / candidate_path
+    candidate_path = candidate_path.resolve()
 
-    if not candidate_path.is_relative_to(DATA_ROOT): 
-        raise ValueError("Path cannot escape the storage directory.")
+    if not candidate_path.is_relative_to(storage_root):
+        raise ValueError(f"Path not related to data root: {candidate_path}")
+    if must_exist and not candidate_path.exists():
+        raise FileNotFoundError(f"Storage path does not exist: {candidate_path}")
+    if file_only and candidate_path.exists() and not candidate_path.is_file():
+        raise ValueError(f"Storage path is not a file: {candidate_path}")
 
     return candidate_path
 
+def resolve_storage_path(path: Path | str) -> Path:
+    if Path(path).is_absolute():
+        raise ValueError("Storage path must be relative")
+    return resolve_managed_path(path)
+
 
 def initialize_storage() -> list[Path] | None:
-    if not STORAGE_PROVIDER == "local":
+    if settings.STORAGE_PROVIDER != "local":
         raise NotImplementedError("Current system supports only filesystem storage")
 
     relative_paths: list = []
@@ -65,22 +78,11 @@ def save_uploaded_bytes(stored_filename: str, file_bytes: bytes) -> Path:
 
 
 def delete_stored_file(path: Path) -> bool:
-    path = Path(path).resolve()
-    if not path.is_relative_to(DATA_ROOT):
-        raise ValueError(f"Path not related to data root: {path}")
-    
-
-    if path.exists() and file_exists(path):
+    path = resolve_managed_path(path, file_only=True)
+    if path.is_file():
         path.unlink()
         return True
     return False
-
-
-def _resolve_managed_path(path: Path | str) -> Path:
-    resolved_path = Path(path).resolve()
-    if not resolved_path.is_relative_to(DATA_ROOT):
-        raise ValueError(f"Path not related to data root: {resolved_path}")
-    return resolved_path
 
 
 def _remove_empty_staging_directories(
@@ -94,7 +96,7 @@ def _remove_empty_staging_directories(
         if batch_directory.is_dir() and not any(batch_directory.iterdir()):
             batch_directory.rmdir()
 
-    trash_directory = DATA_ROOT / ".trash"
+    trash_directory = get_storage_root() / ".trash"
     if trash_directory.is_dir() and not any(trash_directory.iterdir()):
         trash_directory.rmdir()
 
@@ -133,7 +135,7 @@ def stage_files_for_deletion(
     seen_paths: set[Path] = set()
 
     for path in paths:
-        managed_path = _resolve_managed_path(path)
+        managed_path = resolve_managed_path(path, file_only=True)
         if managed_path in seen_paths:
             continue
         seen_paths.add(managed_path)
@@ -147,7 +149,7 @@ def stage_files_for_deletion(
         return []
 
     batch_directory = ensure_directory(
-        DATA_ROOT / ".trash" / uuid.uuid4().hex
+        get_storage_root() / ".trash" / uuid.uuid4().hex
     )
     staged_deletions: list[StagedFileDeletion] = []
 
@@ -175,15 +177,11 @@ def move_file(
     source_path: Path,
     destination_path: Path
 ) -> Path:
-    source_path = Path(source_path).resolve()
+    source_path = resolve_managed_path(source_path, file_only=True)
     if not file_exists(source_path):
         raise ValueError("Source file does not exist")
         
-    destination_path = Path(destination_path).resolve()
-
-    if not source_path.is_relative_to(DATA_ROOT) or not destination_path.is_relative_to(DATA_ROOT):
-        unrelated_path = source_path if not source_path.is_relative_to(DATA_ROOT) else destination_path
-        raise ValueError(f"Path not related to data root: {unrelated_path}")
+    destination_path = resolve_managed_path(destination_path, file_only=True)
     
     ensure_directory(destination_path.parent)
 
