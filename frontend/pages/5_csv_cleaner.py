@@ -1,18 +1,22 @@
-import sys
-from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(PROJECT_ROOT))
+import logging
 
 import streamlit as st
 
 from backend.database.db import get_db_session
-from backend.database.repositories import read_file_by_id
-from backend.services.analysis_service import CSVAnalysisError, CSVLimitError, get_analyzable_csv_files, load_csv_with_limits
-from backend.services.cleaning_service import CleaningOptions, DataCleaningError, preview_cleaning, save_cleaning_result
-from backend.utils.file_utils import format_file_size
+from backend.services.analysis_service import CSVAnalysisError, CSVLimitError
+from backend.services.cleaning_service import (
+    CleaningOptions,
+    DataCleaningError,
+    discard_cleaning_result,
+    get_cleaning_column_options,
+    load_cleaning_source,
+    preview_cleaning,
+    save_cleaning_result,
+)
+from backend.services.file_service import read_managed_file_bytes
+from frontend.ui_helpers import commit_session_changes, select_analyzable_csv
 
+logger = logging.getLogger(__name__)
 
 st.set_page_config(
     page_title="CSV Cleaner", 
@@ -24,24 +28,10 @@ st.title("CSV Cleaner")
 st.caption("Select an organized CSV file and save & export the cleaned data.")
 
 with get_db_session() as session:
-    csv_files = get_analyzable_csv_files(session)
-
-    if not csv_files:
-        st.info("No organized CSV files are available for cleaning.")
-        st.stop()
-
-    # Lookup dictionary
-    file_lookup = {
-        file_record.id: file_record
-        for file_record in csv_files
-    }
-
-    
     with st.form("csv_cleaning_form"):
-        cleaning_file_id = st.selectbox(
-            "Select CSV file",
-            options=list(file_lookup.keys()),
-            format_func=lambda file_id: f"{file_lookup[file_id].original_name} - {format_file_size(file_lookup[file_id].size_bytes)}" ,
+        cleaning_file_id = select_analyzable_csv(
+            session,
+            empty_message="No organized CSV files are available for cleaning.",
         )
 
         preview_rows = st.number_input(
@@ -70,12 +60,10 @@ with get_db_session() as session:
                 st.session_state.pop("cleaned_results", None)
                 st.session_state.pop("cleaned_results_file_id", None)
                 try:
-                    selected_file_record = read_file_by_id(session, cleaning_file_id) 
-                    if selected_file_record is None:
-                        st.error("Selected CSV file was not found.")
-                        st.stop()
-
-                    selected_file_df = load_csv_with_limits(selected_file_record.storage_path)
+                    selected_file_df = load_cleaning_source(
+                        session,
+                        cleaning_file_id,
+                    )
                     st.session_state["original_file_preview"] = selected_file_df
                     st.session_state["cleaning_file_id"] = cleaning_file_id
 
@@ -85,7 +73,14 @@ with get_db_session() as session:
                 except CSVAnalysisError as error:
                     st.error(str(error))
 
+                except DataCleaningError as error:
+                    st.error(str(error))
+
                 except Exception:
+                    logger.exception(
+                        "Unexpected CSV loading failure for file ID %s.",
+                        cleaning_file_id,
+                    )
                     st.error("An unexpected error occurred while loading the CSV.")
             
                         
@@ -94,6 +89,8 @@ with get_db_session() as session:
     selected_file_df = st.session_state.get("original_file_preview")
 
     if cleaning_file_id is not None and selected_file_df is not None:
+        cleaning_column_options = get_cleaning_column_options(selected_file_df)
+
         # Remove Duplicates
         remove_duplicates = st.checkbox(label = "Remove duplicate rows")
         if remove_duplicates:
@@ -118,7 +115,7 @@ with get_db_session() as session:
         if fill_numeric_missing:
             fill_numeric_column = st.selectbox(
                 "Column to fill",
-                options=selected_file_df.select_dtypes(include='number').columns.tolist(),
+                options=cleaning_column_options.numeric_columns,
                 index=None,
                 key=f"numeric_fill_column_{cleaning_file_id}",
             )
@@ -143,7 +140,7 @@ with get_db_session() as session:
         if fill_text_missing:
             fill_text_column = st.selectbox(
                 "Column to fill",
-                options=selected_file_df.select_dtypes(include=['object', 'string']).columns.tolist(),
+                options=cleaning_column_options.text_columns,
                 index=None,
                 key=f"text_fill_column_{cleaning_file_id}",
             )
@@ -237,6 +234,10 @@ with get_db_session() as session:
                 st.error(str(error))
 
             except Exception:
+                logger.exception(
+                    "Unexpected cleaning failure for file ID %s.",
+                    cleaning_file_id,
+                )
                 st.error("An unexpected error occurred while cleaning the CSV.")
 
     cleaned_results = st.session_state.get("cleaned_results")
@@ -276,37 +277,53 @@ with get_db_session() as session:
                         file_id=cleaning_file_id,
                         cleaned_dataframe=cleaned_results.cleaned_dataframe,
                     )
-
-                st.success(f"Cleaned data is saved as CSV in {saved_results.csv_path} ")
-                st.success(f"Cleaned data is saved as Excel in {saved_results.excel_path} ")
-
-                with st.container(horizontal=True):
-                    st.download_button(
-                        label="Download CSV",
-                        data=saved_results.csv_path.read_bytes(),
-                        file_name=saved_results.csv_filename,
-                        mime="text/csv",
-                        key=f"download_csv_{cleaning_file_id}",
-                        icon=":material/download:",
-                        on_click="ignore",
+                    saved = commit_session_changes(
+                        session,
+                        logger,
+                        "The cleaned files were created, but their database records could not be saved.",
                     )
-                    st.download_button(
-                        label="Download Excel",
-                        data=saved_results.excel_path.read_bytes(),
-                        file_name=saved_results.excel_filename,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"download_excel_{cleaning_file_id}",
-                        icon=":material/download:",
-                        on_click="ignore",
-                    ) 
+
+                if saved:
+                    st.success(f"Cleaned data is saved as CSV in {saved_results.csv_path} ")
+                    st.success(f"Cleaned data is saved as Excel in {saved_results.excel_path} ")
+
+                    with st.container(horizontal=True):
+                        st.download_button(
+                            label="Download CSV",
+                            data=read_managed_file_bytes(saved_results.csv_path),
+                            file_name=saved_results.csv_filename,
+                            mime="text/csv",
+                            key=f"download_csv_{cleaning_file_id}",
+                            icon=":material/download:",
+                            on_click="ignore",
+                        )
+                        st.download_button(
+                            label="Download Excel",
+                            data=read_managed_file_bytes(saved_results.excel_path),
+                            file_name=saved_results.excel_filename,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"download_excel_{cleaning_file_id}",
+                            icon=":material/download:",
+                            on_click="ignore",
+                        )
+                else:
+                    discard_cleaning_result(saved_results)
 
             except DataCleaningError as error:
                 st.error(str(error))
 
-            except (OSError, ValueError) as error:
-                st.error(f"Could not save the cleaned files: {error}")
+            except (OSError, ValueError):
+                logger.exception(
+                    "Could not save cleaned files for file ID %s.",
+                    cleaning_file_id,
+                )
+                st.error("The cleaned files could not be saved. Please try again.")
 
             except Exception:
+                logger.exception(
+                    "Unexpected cleaning export failure for file ID %s.",
+                    cleaning_file_id,
+                )
                 st.error(
                     "An unexpected error occurred while saving the cleaned files."
                 )
@@ -333,6 +350,3 @@ with get_db_session() as session:
 
 
             
-
-
-

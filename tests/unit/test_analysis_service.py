@@ -22,11 +22,8 @@ from backend.services.analysis_service import (
 
 
 @pytest.fixture
-def analysis_data_root(tmp_path, monkeypatch):
-    data_root = tmp_path / "data"
-    data_root.mkdir()
-    monkeypatch.setattr("backend.services.analysis_service.DATA_ROOT", data_root)
-    return data_root
+def analysis_data_root(temporary_data_root):
+    return temporary_data_root
 
 
 @pytest.fixture
@@ -85,11 +82,11 @@ def test_analyze_csv_path_failures(tmp_path, analysis_data_root):
 
     csv_path_1 = tmp_path / "file.csv"
     csv_path_1.write_text("name,age\nAlice,22\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="escape the storage directory"):
+    with pytest.raises(ValueError, match="not related to data root"):
         analyze_csv(csv_path_1)
 
     csv_path = analysis_data_root
-    with pytest.raises(ValueError, match="not point to a file"):
+    with pytest.raises(ValueError, match="not a file"):
         analyze_csv(csv_path)
 
     pdf_path = analysis_data_root / "file.pdf"
@@ -101,7 +98,7 @@ def test_analyze_csv_path_failures(tmp_path, analysis_data_root):
     csv_path.write_text("name,age\nAlice,22\n", encoding="utf-8")
     size = (MAX_CSV_ANALYSIS_SIZE_MB  * (1024**2)) + 1
     csv_path.write_bytes(b"x" * size)
-    with pytest.raises(CSVLimitError, match="exceeds the analysable file size limit"):
+    with pytest.raises(CSVLimitError, match="10 MB analysis limit"):
         analyze_csv(csv_path)
 
 
@@ -121,6 +118,60 @@ def test_load_csv_with_limits_valid_csv(analysis_data_root):
     assert result_df.shape == (2,3)
     assert result_df.columns.tolist() == ["name", "age", "city"]
     assert result_df.iloc[0]["name"] == "Menura"
+
+
+def test_load_csv_with_limits_supports_utf8_bom(analysis_data_root):
+    csv_path = analysis_data_root / "bom.csv"
+    csv_path.write_bytes(
+        b"\xef\xbb\xbfname,age\nMenura,22\n"
+    )
+
+    result = load_csv_with_limits(csv_path)
+
+    assert result.columns.tolist() == ["name", "age"]
+    assert result.to_dict("records") == [{"name": "Menura", "age": 22}]
+
+
+def test_analyze_csv_rejects_header_only_csv(analysis_data_root):
+    csv_path = analysis_data_root / "header-only.csv"
+    csv_path.write_text("name,age\n", encoding="utf-8")
+
+    with pytest.raises(CSVAnalysisError, match="no data rows"):
+        analyze_csv(csv_path)
+
+
+def test_load_csv_with_limits_enforces_row_limit(
+    analysis_data_root,
+    monkeypatch,
+):
+    csv_path = analysis_data_root / "too-many-rows.csv"
+    csv_path.write_text("name\nA\nB\nC\n", encoding="utf-8")
+    monkeypatch.setattr(analysis_service, "MAX_CSV_ROWS", 2)
+
+    with pytest.raises(CSVLimitError, match="2-row analysis limit"):
+        load_csv_with_limits(csv_path)
+
+
+def test_load_csv_with_limits_enforces_column_limit(
+    analysis_data_root,
+    monkeypatch,
+):
+    csv_path = analysis_data_root / "too-many-columns.csv"
+    csv_path.write_text("first,second,third\n1,2,3\n", encoding="utf-8")
+    monkeypatch.setattr(analysis_service, "MAX_CSV_COLUMNS", 2)
+
+    with pytest.raises(CSVLimitError, match="2-column analysis limit"):
+        load_csv_with_limits(csv_path)
+
+
+def test_analyze_csv_does_not_modify_source_file(analysis_data_root):
+    csv_path = analysis_data_root / "unchanged.csv"
+    csv_path.write_bytes(b"name,age\nAlice,22\nBob,25\n")
+    original_bytes = csv_path.read_bytes()
+
+    analyze_csv(csv_path)
+
+    assert csv_path.read_bytes() == original_bytes
 
 
 # Test analyze_dataframe - Valid data

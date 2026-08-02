@@ -1,21 +1,16 @@
-import sys
-from pathlib import Path
+import logging
 
 import streamlit as st
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(PROJECT_ROOT))
 
 from backend.config.settings import MAX_REPORT_CHARTS
 from backend.database.db import get_db_session
 from backend.services.analysis_service import (
     CSVAnalysisError,
     CSVLimitError,
-    get_analyzable_csv_files,
-    load_csv_with_limits,
+    load_organized_csv,
 )
 from backend.services.report_service import ReportGenerationError, create_report
+from backend.services.file_service import read_managed_file_bytes
 from backend.services.visualization_service import (
     ChartConfiguration,
     VisualizationError,
@@ -23,8 +18,9 @@ from backend.services.visualization_service import (
     get_chart_selection_options,
 )
 from backend.utils.constants import VALID_AGGREGATIONS
-from backend.utils.file_utils import format_file_size
+from frontend.ui_helpers import commit_session_changes, select_analyzable_csv
 
+logger = logging.getLogger(__name__)
 
 st.set_page_config(
     page_title="Generate reports",
@@ -41,21 +37,10 @@ st.session_state.setdefault("report_adding_chart", False)
 st.session_state.setdefault("saved_report", None)
 
 with get_db_session() as session:
-    csv_files = get_analyzable_csv_files(session)
-
-    if not csv_files:
-        st.info("No organized CSV files are available for reporting.")
-        st.stop()
-
-    file_lookup = {file_record.id: file_record for file_record in csv_files}
-    selected_file_id = st.selectbox(
-        "Select CSV file",
-        options=list(file_lookup),
+    selected_file_id = select_analyzable_csv(
+        session,
+        empty_message="No organized CSV files are available for reporting.",
         index=None,
-        format_func=lambda file_id: (
-            f"{file_lookup[file_id].original_name} - "
-            f"{format_file_size(file_lookup[file_id].size_bytes)}"
-        ),
         placeholder="Choose a CSV file",
         key="report_file_select",
     )
@@ -71,15 +56,27 @@ with get_db_session() as session:
         st.session_state["saved_report"] = None
 
     try:
-        dataframe = load_csv_with_limits(
-            file_lookup[selected_file_id].storage_path
-        )
+        _, dataframe = load_organized_csv(session, selected_file_id)
         chart_options = get_chart_selection_options(dataframe)
     except CSVLimitError as error:
         st.warning(str(error))
         st.stop()
     except (CSVAnalysisError, VisualizationError) as error:
         st.error(str(error))
+        st.stop()
+    except (FileNotFoundError, OSError, ValueError):
+        logger.exception(
+            "Could not load report source file ID %s.",
+            selected_file_id,
+        )
+        st.error("The selected CSV file is unavailable or could not be read.")
+        st.stop()
+    except Exception:
+        logger.exception(
+            "Unexpected report source failure for file ID %s.",
+            selected_file_id,
+        )
+        st.error("The selected CSV file could not be loaded. Please try again.")
         st.stop()
 
     if not chart_options.available_chart_types:
@@ -271,14 +268,42 @@ with get_db_session() as session:
                         file_id=selected_file_id,
                         chart_configurations=report_charts,
                     )
-                st.session_state["saved_report"] = saved_report
-                st.success("HTML and PDF reports were saved successfully.")
+                if commit_session_changes(
+                    session,
+                    logger,
+                    "The reports were generated, but their database records could not be saved.",
+                ):
+                    st.session_state["saved_report"] = saved_report
+                    st.success("HTML and PDF reports were saved successfully.")
             except ReportGenerationError as error:
-                st.error(str(error))
-            except (OSError, ValueError) as error:
-                st.error(f"The report could not be saved: {error}")
+                if commit_session_changes(
+                    session,
+                    logger,
+                    "The report failure could not be recorded.",
+                ):
+                    st.error(str(error))
+            except (OSError, ValueError):
+                logger.exception(
+                    "Could not save report for file ID %s.",
+                    selected_file_id,
+                )
+                if commit_session_changes(
+                    session,
+                    logger,
+                    "The report failure could not be recorded.",
+                ):
+                    st.error("The report could not be saved. Please try again.")
             except Exception:
-                st.error("An unexpected error occurred while saving the report.")
+                logger.exception(
+                    "Unexpected report generation failure for file ID %s.",
+                    selected_file_id,
+                )
+                if commit_session_changes(
+                    session,
+                    logger,
+                    "The report failure could not be recorded.",
+                ):
+                    st.error("An unexpected error occurred while saving the report.")
 
     saved_report = st.session_state.get("saved_report")
     if (
@@ -289,7 +314,7 @@ with get_db_session() as session:
         with st.container(horizontal=True):
             st.download_button(
                 "Download HTML",
-                data=saved_report.html_report_path.read_bytes(),
+                data=read_managed_file_bytes(saved_report.html_report_path),
                 file_name=saved_report.html_report_filename,
                 mime="text/html",
                 icon=":material/download:",
@@ -298,7 +323,7 @@ with get_db_session() as session:
             )
             st.download_button(
                 "Download PDF",
-                data=saved_report.pdf_report_path.read_bytes(),
+                data=read_managed_file_bytes(saved_report.pdf_report_path),
                 file_name=saved_report.pdf_report_filename,
                 mime="application/pdf",
                 icon=":material/download:",

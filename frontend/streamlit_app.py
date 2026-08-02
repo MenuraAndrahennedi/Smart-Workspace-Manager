@@ -1,11 +1,8 @@
-from pathlib import Path
-import sys
-
 import streamlit as st
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(PROJECT_ROOT))
+from backend.utils.logging_config import configure_logging
+
+configure_logging()
 
 st.set_page_config(
     page_title="Smart Workspace Manager", 

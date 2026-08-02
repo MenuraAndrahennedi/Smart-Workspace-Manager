@@ -101,6 +101,10 @@ def test_file_repository_query_helpers(test_session):
 
     search_results = search_files(test_session, "report")
     assert [file_record.id for file_record in search_results] == [second.id]
+    assert [
+        file_record.id
+        for file_record in search_files(test_session, "RESEARCH")
+    ] == [second.id]
     assert search_files(test_session, "%") == []
     assert [record.id for record in search_files(test_session, "_")] == [
         third.id,

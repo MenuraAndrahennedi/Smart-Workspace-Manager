@@ -1,16 +1,19 @@
-from pathlib import Path
-import sys
+import logging
+
 import streamlit as st
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(PROJECT_ROOT))
-
 from backend.database.db import get_db_session
-from backend.database.repositories import query_files
-from backend.services.file_service import delete_actual_file
+from backend.services.file_service import (
+    delete_actual_file,
+    get_download_path,
+    get_library_files,
+    read_managed_file_bytes,
+)
 from backend.utils.constants import ORGANIZER_CATEGORY_RULES
 from backend.utils.file_utils import format_file_size
+from frontend.ui_helpers import enforce_exclusive_all_selection
+
+logger = logging.getLogger(__name__)
 
 st.set_page_config(
     page_title="File Library", 
@@ -35,11 +38,16 @@ category_options = [
     ],
     "Others",
 ]
+category_widget_key = "file_library_categories"
+st.session_state.setdefault(category_widget_key, ["All"])
+st.session_state.setdefault(f"_{category_widget_key}_previous", ["All"])
 select_category = st.segmented_control(
     label="Filter category",
     options=category_options,
     selection_mode="multi",
-    default=["All"],
+    key=category_widget_key,
+    on_change=enforce_exclusive_all_selection,
+    args=(category_widget_key,),
 )
 
 category_filter = None
@@ -50,11 +58,16 @@ if select_category and "All" not in select_category:
     ]
 
 status_options = ["All", "Uploaded", "Organized", "Failed"]
+status_widget_key = "file_library_statuses"
+st.session_state.setdefault(status_widget_key, ["All"])
+st.session_state.setdefault(f"_{status_widget_key}_previous", ["All"])
 select_status = st.segmented_control(
     label="Filter status",
     options=status_options,
     selection_mode="multi",
-    default=["All"],
+    key=status_widget_key,
+    on_change=enforce_exclusive_all_selection,
+    args=(status_widget_key,),
 )
 
 status_filter = None
@@ -105,10 +118,15 @@ def confirm_delete(
 
                 st.rerun()
 
-            except FileNotFoundError as error:
-                st.error(str(error))
+            except FileNotFoundError:
+                logger.warning(
+                    "Delete requested for missing file ID %s.",
+                    file_id,
+                )
+                st.error("The selected file no longer exists.")
 
             except Exception:
+                logger.exception("Could not delete file ID %s.", file_id)
                 st.error("The file could not be deleted.")
 
 
@@ -123,12 +141,17 @@ if delete_success:
 
 # Search and get files (Can delete)
 with get_db_session() as session:
-    files = query_files(
-        session=session,
-        search_term=search_term_input,
-        category=category_filter,
-        status=status_filter,
-    )
+    try:
+        files = get_library_files(
+            session=session,
+            search_term=search_term_input,
+            category=category_filter,
+            status=status_filter,
+        )
+    except Exception:
+        logger.exception("Could not load the file library.")
+        st.error("The file library could not be loaded. Please try again.")
+        st.stop()
     if not files:
         st.info("No files matched your search and filters.")
         st.stop()
@@ -145,18 +168,22 @@ with get_db_session() as session:
             st.write(f"Status: {file_record.status}")
             st.write(f"Location: {file_record.storage_path}")
 
-            file_path = Path(file_record.storage_path)
-            if file_path.is_file():
+            try:
+                file_path = get_download_path(file_record.storage_path)
                 st.download_button(
                     label="Download",
-                    data=lambda path=file_path: path.read_bytes(),
+                    data=read_managed_file_bytes(file_path),
                     file_name=file_record.original_name,
                     mime="application/octet-stream", # Unknown binary file (stream of 8-bit bytes)
                     key=f"download_{file_record.id}",
                     icon=":material/download:",
                     on_click="ignore",
                 )
-            else: 
+            except (FileNotFoundError, ValueError):
+                logger.warning(
+                    "Stored file is unavailable for file ID %s.",
+                    file_record.id,
+                )
                 st.warning("The database record exists, but the stored file is missing.")
 
             if st.button(

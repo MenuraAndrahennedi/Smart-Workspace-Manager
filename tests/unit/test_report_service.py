@@ -12,17 +12,14 @@ from backend.services.visualization_service import ChartConfiguration
 
 
 @pytest.fixture
-def report_source(test_session, tmp_path, monkeypatch):
-    data_root = tmp_path / "data"
-    data_root.mkdir()
+def report_source(test_session, temporary_data_root):
+    data_root = temporary_data_root
     csv_path = data_root / "sales.csv"
     csv_path.write_text(
         "region,sales\nNorth,10\nSouth,20\nNorth,30\n",
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(report_service, "DATA_ROOT", data_root)
-    monkeypatch.setattr(analysis_service, "DATA_ROOT", data_root)
 
     file_record = create_file(
         session=test_session,
@@ -61,6 +58,9 @@ def test_create_report_saves_html_pdf_and_database_records(
 ):
     file_record, data_root = report_source
 
+    source_path = Path(file_record.storage_path)
+    original_csv_bytes = source_path.read_bytes()
+
     result = create_report(
         session=test_session,
         file_id=file_record.id,
@@ -82,7 +82,15 @@ def test_create_report_saves_html_pdf_and_database_records(
     assert result.pdf_report_filename.endswith(".pdf")
     assert result.pdf_report_path.read_bytes().startswith(b"%PDF")
     assert "sales.csv report" in report_html
+    assert "Dataset summary" in report_html
+    assert "Rows: 3" in report_html
+    assert "Columns: 2" in report_html
+    assert "Missing values: 0" in report_html
+    assert "Duplicate rows: 0" in report_html
+    assert "Sales by region" in report_html
+    assert "Sales distribution" in report_html
     assert "plotly" in report_html.lower()
+    assert source_path.read_bytes() == original_csv_bytes
 
     assert html_record is not None
     assert html_record.file_id == file_record.id
@@ -116,6 +124,14 @@ def test_create_report_validates_chart_list(
             session=test_session,
             file_id=file_record.id,
             chart_configurations=report_charts(),
+        )
+
+    monkeypatch.setattr(report_service, "MAX_REPORT_CHARTS", 10)
+    with pytest.raises(ReportGenerationError, match="no more than 10 charts"):
+        create_report(
+            session=test_session,
+            file_id=file_record.id,
+            chart_configurations=[report_charts()[0]] * 11,
         )
 
 

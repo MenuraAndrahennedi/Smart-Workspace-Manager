@@ -9,10 +9,11 @@ import logging
 from sqlalchemy.orm import Session
 from pandas.api.types import is_numeric_dtype
 
-from backend.config.settings import DATA_ROOT, MAX_CSV_ANALYSIS_SIZE_MB, MAX_CSV_ROWS, MAX_CSV_COLUMNS
+from backend.config.settings import MAX_CSV_ANALYSIS_SIZE_MB, MAX_CSV_ROWS, MAX_CSV_COLUMNS
 from backend.database.models import FileRecord
 from backend.database.repositories import query_files, read_file_by_id, create_analysis_job, update_analysis_job 
 from backend.utils.validators import validate_file_extension
+from backend.services.storage_service import resolve_managed_path
 
 logger = logging.getLogger(__name__)
 
@@ -42,33 +43,34 @@ class RecordedCSVAnalysis:
     result: CSVAnalysisResult
 
 def load_csv_with_limits(csv_path: Path) -> pd.DataFrame:
-    csv_path = Path(csv_path).resolve()
-
-    if not csv_path.exists():
-        raise FileNotFoundError("Path does not exist.")        
-
-    if not csv_path.is_relative_to(DATA_ROOT): 
-        raise ValueError("Path cannot escape the storage directory.")
-
-    if not csv_path.is_file():
-        raise ValueError("Path does not point to a file.")
+    csv_path = resolve_managed_path(
+        csv_path,
+        must_exist=True,
+        file_only=True,
+    )
 
     if validate_file_extension(csv_path.name) != "csv":
         raise ValueError("Path does not point to a CSV file.")
 
     if csv_path.stat().st_size > MAX_CSV_ANALYSIS_SIZE_MB * (1024**2):
-        raise CSVLimitError("File exceeds the analysable file size limit")
+        raise CSVLimitError(
+            f"The CSV exceeds the {MAX_CSV_ANALYSIS_SIZE_MB} MB analysis limit."
+        )
     
     try:
         header = pd.read_csv(csv_path, nrows=0, encoding="utf-8-sig")
         num_cols = header.shape[1]
         if num_cols > MAX_CSV_COLUMNS:
-            raise CSVLimitError("File exceeds the analysable columns limit")
+            raise CSVLimitError(
+                f"The CSV exceeds the {MAX_CSV_COLUMNS}-column analysis limit."
+            )
 
         df = pd.read_csv(csv_path, nrows=MAX_CSV_ROWS+1, encoding="utf-8-sig")
         num_rows = df.shape[0]
         if num_rows > MAX_CSV_ROWS:
-            raise CSVLimitError("File exceeds the analysable rows limit")
+            raise CSVLimitError(
+                f"The CSV exceeds the {MAX_CSV_ROWS}-row analysis limit."
+            )
 
         return df
 
@@ -78,7 +80,7 @@ def load_csv_with_limits(csv_path: Path) -> pd.DataFrame:
 
     except pd.errors.ParserError as error:
         logger.exception("Failed to parse CSV file: %s", csv_path)
-        raise CSVAnalysisError("The CSV structure is invalid or malformed..") from error
+        raise CSVAnalysisError("The CSV structure is invalid or malformed.") from error
 
     except UnicodeDecodeError as error:
         logger.exception("Failed to parse CSV file: %s", csv_path)
@@ -145,29 +147,34 @@ def get_analyzable_csv_files(session: Session) -> list[FileRecord]:
 
     return sorted(csv_files,  key=attrgetter('updated_at'), reverse = True)
 
+
+def get_organized_csv_record(
+    session: Session,
+    file_id: int,
+) -> FileRecord:
+    file_record = read_file_by_id(session, file_id)
+    if file_record is None:
+        raise CSVAnalysisError("The selected file does not exist.")
+    if file_record.extension.lstrip(".").lower() != "csv":
+        raise CSVAnalysisError("The selected file must be a CSV file.")
+    if file_record.status.lower() != "organized":
+        raise CSVAnalysisError("The selected CSV file must be organized.")
+    return file_record
+
+
+def load_organized_csv(
+    session: Session,
+    file_id: int,
+) -> tuple[FileRecord, pd.DataFrame]:
+    file_record = get_organized_csv_record(session, file_id)
+    return file_record, load_csv_with_limits(file_record.storage_path)
+
 def analyze_file_and_record_job(
     session: Session,
     file_id: int,
     preview_rows: int = 10,
 ) -> RecordedCSVAnalysis:
-    file_record = read_file_by_id(session, file_id)
-
-    if file_record is None:
-        raise CSVAnalysisError(
-            "The selected file record does not exist."
-        )
-
-    extension = file_record.extension.lstrip(".").lower()
-
-    if extension != "csv":
-        raise CSVAnalysisError(
-            "The selected file is not a CSV file."
-        )
-
-    if file_record.status.lower() != "organized":
-        raise CSVAnalysisError(
-            "Only organized CSV files can be analyzed."
-        )
+    file_record = get_organized_csv_record(session, file_id)
 
     requested_options = {
         "preview_rows": preview_rows,
@@ -315,12 +322,7 @@ def filter_csv_data(
     if maximum_result_rows < 1:
         raise ValueError("maximum_result_rows must be at least 1.")
 
-    file_record = read_file_by_id(session, file_id)
-    if file_record is None:
-        raise FileNotFoundError(f"File record with ID {file_id} was not found.")
-    csv_path = Path(file_record.storage_path)
-
-    dataframe = load_csv_with_limits(csv_path)
+    _, dataframe = load_organized_csv(session, file_id)
 
     if not selected_columns:
         raise CSVAnalysisError("Select at least one column.")

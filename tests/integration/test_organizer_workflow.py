@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
@@ -26,6 +27,46 @@ def get_automation_logs(test_session) -> list[AutomationLog]:
     return test_session.scalars(
         select(AutomationLog).order_by(AutomationLog.id)
     ).all()
+
+
+def test_organizer_moves_file_and_updates_database_successfully(
+    temporary_data_root,
+    test_session,
+    monkeypatch,
+):
+    source = temporary_data_root / "uploads" / "report.csv"
+    source.parent.mkdir(parents=True)
+    source.write_text("name,score\nMenura,90")
+    file_record = create_uploaded_record(test_session, source)
+    fixed_date = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr(automation_service, "time_now", lambda: fixed_date)
+
+    result = organize_uploaded_file(
+        session=test_session,
+        file_id=file_record.id,
+        source_path=source,
+    )
+
+    expected_path = (
+        temporary_data_root
+        / "processed"
+        / "spreadsheets"
+        / "2026"
+        / "08"
+        / "report.csv"
+    )
+    updated_record = read_file_by_id(test_session, file_record.id)
+
+    assert result.destination_path == expected_path
+    assert result.category == "spreadsheets"
+    assert result.status == "organized"
+    assert not source.exists()
+    assert expected_path.is_file()
+    assert updated_record is not None
+    assert updated_record.storage_path == str(expected_path)
+    assert updated_record.category == "spreadsheets"
+    assert updated_record.status == "organized"
+    assert get_automation_logs(test_session)[0].status == "success"
 
 
 def test_organizer_restores_file_when_database_update_fails(

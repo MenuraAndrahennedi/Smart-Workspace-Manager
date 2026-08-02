@@ -1,6 +1,7 @@
 # Reusable helper functions for creating and resolving file/folder paths
 
 from pathlib import Path
+from datetime import datetime
 import re
 import uuid
 
@@ -26,12 +27,27 @@ def get_or_create_path(path: str | Path) -> Path:
     path = ensure_directory(resolve_project_path(path))
     return path.resolve()
 
+
+def ensure_dated_directory(
+    base_path: str | Path,
+    date_value: datetime,
+) -> Path:
+    return ensure_directory(
+        Path(base_path)
+        / date_value.strftime("%Y")
+        / date_value.strftime("%m")
+    )
+
 def resolve_data_path(data_root: Path, paths: list[str | Path]) -> Path:
-    data_path = data_root
+    resolved_root = Path(data_root).resolve()
+    data_path = resolved_root
     for path in paths:
         if isinstance(path,str): path = Path(path)
         data_path = data_path.joinpath(path) 
-    return data_path.resolve()
+    data_path = data_path.resolve()
+    if not data_path.is_relative_to(resolved_root):
+        raise ValueError("Path cannot escape the data root.")
+    return data_path
 
 def file_exists(path: str | Path) -> bool:
     if isinstance(path,str): path = Path(path)

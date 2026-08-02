@@ -1,13 +1,18 @@
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from backend.database.repositories import create_file
+from backend.database.repositories import create_file, read_file_by_id
+from backend.services.analysis_service import get_analyzable_csv_files
 from backend.services.cleaning_service import (
     CleaningOptions,
     DataCleaningError,
     DuplicateRemovalResult,
+    discard_cleaning_result,
+    get_cleaning_column_options,
+    load_cleaning_source,
     preview_cleaning,
     save_cleaning_result,
     drop_rows_with_missing_values,
@@ -15,15 +20,12 @@ from backend.services.cleaning_service import (
     fill_text_missing_values,
     remove_duplicates,
 )
+from backend.services.xlsx_to_csv_service import get_convertible_xlsx_files
 
 
 @pytest.fixture
-def cleaning_data_root(tmp_path, monkeypatch):
-    data_root = tmp_path / "data"
-    data_root.mkdir()
-    monkeypatch.setattr("backend.services.cleaning_service.DATA_ROOT", data_root)
-    monkeypatch.setattr("backend.services.analysis_service.DATA_ROOT", data_root)
-    return data_root
+def cleaning_data_root(temporary_data_root):
+    return temporary_data_root
 
 
 @pytest.fixture
@@ -76,10 +78,10 @@ def test_remove_duplicates():
     subset_empty = []
     subset_invalid = ["city", "name"]
 
-    with pytest.raises(DataCleaningError, match="cannot be an empty list"):
+    with pytest.raises(DataCleaningError, match="at least one duplicate-check column"):
         remove_duplicates(df, subset_empty)
 
-    with pytest.raises(DataCleaningError, match="can only contain original columns"):
+    with pytest.raises(DataCleaningError, match="columns from the original CSV"):
         remove_duplicates(df, subset_invalid)
 
     no_subset_result: DuplicateRemovalResult = remove_duplicates(df)
@@ -95,6 +97,18 @@ def test_remove_duplicates():
     assert subset_result.original_row_count == 3
     assert subset_result.cleaned_row_count == 1
     assert subset_result.removed_duplicate_count == 2
+
+
+def test_load_cleaning_source_and_detect_column_options(
+    test_session,
+    organized_csv_file,
+):
+    dataframe = load_cleaning_source(test_session, organized_csv_file.id)
+    options = get_cleaning_column_options(dataframe)
+
+    assert dataframe.shape == (4, 3)
+    assert options.numeric_columns == ["age"]
+    assert options.text_columns == ["name", "city"]
 
 
 
@@ -128,10 +142,10 @@ def test_drop_rows_with_missing_values():
     empty_columns = []
 
 
-    with pytest.raises(DataCleaningError, match="cannot be an empty list"):
+    with pytest.raises(DataCleaningError, match="at least one column"):
         drop_rows_with_missing_values(df, empty_columns)
     
-    with pytest.raises(DataCleaningError, match="can only contain original columns"):
+    with pytest.raises(DataCleaningError, match="columns from the original CSV"):
         drop_rows_with_missing_values(df, invalid_columns)
 
     drop_all_results = drop_rows_with_missing_values(df)
@@ -193,7 +207,7 @@ def test_fill_numeric_missing_values():
     text_column = "city"
 
     # Empty column
-    with pytest.raises(DataCleaningError, match="cannot be an empty"):
+    with pytest.raises(DataCleaningError, match="Select a numeric column"):
         fill_numeric_missing_values(df, None, "mean")
 
     # Invalid Column
@@ -209,7 +223,7 @@ def test_fill_numeric_missing_values():
         fill_numeric_missing_values(df, valid_column, "constant")
 
     # Invalid Strategy
-    with pytest.raises(DataCleaningError, match="strategy is unsupported"):
+    with pytest.raises(DataCleaningError, match="strategy is not supported"):
         fill_numeric_missing_values(df, valid_column, "10")
         
 
@@ -233,6 +247,16 @@ def test_fill_numeric_missing_values():
     assert fill_constant_results.remaining_missing_count == 1
     assert fill_constant_results.rows_removed == 0
     assert fill_constant_results.values_filled == 1
+
+
+@pytest.mark.parametrize("strategy", ["mean", "median"])
+def test_fill_numeric_missing_values_rejects_all_missing_column(strategy):
+    dataframe = pd.DataFrame(
+        {"age": pd.Series([None, None], dtype="float64")}
+    )
+
+    with pytest.raises(DataCleaningError, match="no usable numeric values"):
+        fill_numeric_missing_values(dataframe, "age", strategy)
 
 
 def test_fill_text_missing_values():
@@ -259,7 +283,7 @@ def test_fill_text_missing_values():
     numeric_column = "age"
 
     # Empty column
-    with pytest.raises(DataCleaningError, match="cannot be an empty"):
+    with pytest.raises(DataCleaningError, match="Select a text column"):
         fill_text_missing_values(df, None, fill_value)
 
     # Invalid Column
@@ -314,10 +338,37 @@ def test_preview_cleaning_applies_selected_actions(test_session, organized_csv_f
     assert result.remaining_missing_values == 0
 
 
+def test_each_cleaning_preview_reloads_the_original_csv(
+    test_session,
+    organized_csv_file,
+):
+    source_path = Path(organized_csv_file.storage_path)
+    original_bytes = source_path.read_bytes()
+
+    first_preview = preview_cleaning(
+        session=test_session,
+        file_id=organized_csv_file.id,
+        cleaning_options=CleaningOptions(remove_duplicates=True),
+    )
+    first_preview.cleaned_dataframe.loc[0, "name"] = "Changed in memory"
+
+    second_preview = preview_cleaning(
+        session=test_session,
+        file_id=organized_csv_file.id,
+        cleaning_options=CleaningOptions(),
+    )
+
+    assert second_preview.cleaned_dataframe.iloc[0]["name"] == "Menura"
+    assert second_preview.cleaned_row_count == 4
+    assert source_path.read_bytes() == original_bytes
+
+
 def test_save_cleaning_result_creates_csv_and_excel_files(
     test_session,
     organized_csv_file,
 ):
+    source_path = Path(organized_csv_file.storage_path)
+    original_bytes = source_path.read_bytes()
     cleaned_df = pd.DataFrame(
         {
             "name": ["Menura", "Sahas"],
@@ -342,5 +393,101 @@ def test_save_cleaning_result_creates_csv_and_excel_files(
     assert result.row_count == 2
     assert result.column_count == 3
 
+    csv_record = read_file_by_id(test_session, result.csv_file_id)
+    excel_record = read_file_by_id(test_session, result.excel_file_id)
+    assert csv_record.storage_path == str(result.csv_path)
+    assert csv_record.extension == "csv"
+    assert csv_record.status == "organized"
+    assert excel_record.storage_path == str(result.excel_path)
+    assert excel_record.extension == "xlsx"
+    assert excel_record.status == "organized"
+
+    analyzable_ids = {
+        file_record.id
+        for file_record in get_analyzable_csv_files(test_session)
+    }
+    convertible_ids = {
+        file_record.id
+        for file_record in get_convertible_xlsx_files(test_session)
+    }
+    assert result.csv_file_id in analyzable_ids
+    assert result.excel_file_id in convertible_ids
+
     saved_csv = pd.read_csv(result.csv_path, encoding="utf-8-sig")
     assert saved_csv.equals(cleaned_df)
+    assert source_path.read_bytes() == original_bytes
+
+
+def test_save_cleaning_result_removes_partial_outputs_after_failure(
+    test_session,
+    organized_csv_file,
+    cleaning_data_root,
+    monkeypatch,
+):
+    cleaned_df = pd.DataFrame({"name": ["Menura"], "age": [22]})
+
+    def fail_excel_export(self, *args, **kwargs):
+        raise OSError("Excel export failed")
+
+    monkeypatch.setattr(pd.DataFrame, "to_excel", fail_excel_export)
+
+    with pytest.raises(OSError, match="Excel export failed"):
+        save_cleaning_result(
+            session=test_session,
+            file_id=organized_csv_file.id,
+            cleaned_dataframe=cleaned_df,
+            date_value=datetime(2026, 8, 1, tzinfo=timezone.utc),
+        )
+
+    cleaned_root = cleaning_data_root / "processed" / "cleaned"
+    assert list(cleaned_root.rglob("*.csv")) == []
+    assert list(cleaned_root.rglob("*.xlsx")) == []
+
+
+def test_save_cleaning_result_removes_outputs_after_database_failure(
+    test_session,
+    organized_csv_file,
+    cleaning_data_root,
+    monkeypatch,
+):
+    real_create_file = create_file
+    create_calls = 0
+
+    def fail_second_create(**kwargs):
+        nonlocal create_calls
+        create_calls += 1
+        if create_calls == 2:
+            raise RuntimeError("database failure")
+        return real_create_file(**kwargs)
+
+    monkeypatch.setattr(
+        "backend.services.cleaning_service.create_file",
+        fail_second_create,
+    )
+
+    with pytest.raises(RuntimeError, match="database failure"):
+        save_cleaning_result(
+            session=test_session,
+            file_id=organized_csv_file.id,
+            cleaned_dataframe=pd.DataFrame({"name": ["Menura"]}),
+        )
+
+    cleaned_root = cleaning_data_root / "processed" / "cleaned"
+    assert list(cleaned_root.rglob("*.csv")) == []
+    assert list(cleaned_root.rglob("*.xlsx")) == []
+
+
+def test_discard_cleaning_result_removes_both_exports(
+    test_session,
+    organized_csv_file,
+):
+    result = save_cleaning_result(
+        session=test_session,
+        file_id=organized_csv_file.id,
+        cleaned_dataframe=pd.DataFrame({"name": ["Menura"]}),
+    )
+
+    discard_cleaning_result(result)
+
+    assert not result.csv_path.exists()
+    assert not result.excel_path.exists()

@@ -3,10 +3,33 @@ import pytest
 
 from backend.services.storage_service import (
     finalize_staged_files,
+    initialize_storage,
     move_file,
+    resolve_storage_path,
     restore_staged_files,
     stage_files_for_deletion,
 )
+from backend.utils.constants import STORAGE_DIRECTORIES
+
+
+def test_initialize_storage_creates_all_required_directories(
+    temporary_data_root,
+):
+    created_directories = initialize_storage()
+
+    assert created_directories is not None
+    assert set(created_directories) == {
+        (temporary_data_root / directory).resolve()
+        for directory in STORAGE_DIRECTORIES
+    }
+    assert all(path.is_dir() for path in created_directories)
+
+
+def test_resolve_storage_path_rejects_paths_outside_data_root(
+    temporary_data_root,
+):
+    with pytest.raises(ValueError, match="not related to data root"):
+        resolve_storage_path("../outside.txt")
 
 
 #Test move_file()
@@ -50,6 +73,28 @@ def test_move_file_rejects_duplicate_destination(temporary_data_root):
     assert source.exists()
     assert destination.exists()
     assert destination.read_text() == "existing content"
+
+
+def test_move_file_rejects_source_and_destination_outside_data_root(
+    temporary_data_root,
+    tmp_path,
+):
+    managed_source = temporary_data_root / "uploads" / "report.csv"
+    managed_source.parent.mkdir(parents=True)
+    managed_source.write_text("content")
+    outside_source = tmp_path / "outside.csv"
+    outside_source.write_text("outside")
+    managed_destination = temporary_data_root / "processed" / "report.csv"
+    outside_destination = tmp_path / "outside-destination.csv"
+
+    with pytest.raises(ValueError, match="not related to data root"):
+        move_file(outside_source, managed_destination)
+
+    with pytest.raises(ValueError, match="not related to data root"):
+        move_file(managed_source, outside_destination)
+
+    assert outside_source.is_file()
+    assert managed_source.is_file()
 
 
 def test_stage_files_for_deletion_can_restore_files(temporary_data_root):

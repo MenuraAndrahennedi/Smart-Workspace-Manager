@@ -6,9 +6,11 @@ from sqlalchemy.orm import Session
 from dataclasses import dataclass
 
 from backend.services import storage_service
-from backend.utils.validators import validate_file_extension
+from backend.utils.validators import get_file_category
 from backend.utils.constants import ORGANIZER_CATEGORY_RULES, DEFAULT_ORGANIZER_CATEGORY
-from backend.config.settings import time_now, DATA_ROOT
+from backend.config import settings
+from backend.utils.file_utils import ensure_dated_directory
+from backend.utils.time_utils import time_now
 from backend.database.repositories import update_file_location, create_automation_log
 
 logger = logging.getLogger(__name__)
@@ -22,12 +24,7 @@ class OrganizationResult:
     status: str
 
 def detect_file_category(filename: str) -> str:
-    extension = validate_file_extension(filename)
-
-    for filecategory in ORGANIZER_CATEGORY_RULES.keys():
-        if extension in ORGANIZER_CATEGORY_RULES.get(filecategory):
-            return filecategory
-    return DEFAULT_ORGANIZER_CATEGORY
+    return get_file_category(filename)
 
 def build_destination_directory(
     category: str,
@@ -40,10 +37,10 @@ def build_destination_directory(
     if category not in allowed_categories:
         raise ValueError("The file category is unsupported")
 
-    year = date_value.strftime("%Y")
-    month = date_value.strftime("%m")
-
-    return DATA_ROOT / "processed" / category / year / month
+    return ensure_dated_directory(
+        settings.DATA_ROOT / "processed" / category,
+        date_value,
+    )
     
 
 

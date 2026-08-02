@@ -5,10 +5,15 @@ from sqlalchemy.orm import Session
 
 import pandas as pd
 
-from backend.config.settings import DATA_ROOT, time_now
-from backend.database.repositories import read_file_by_id
-from backend.services.analysis_service import load_csv_with_limits
-from backend.utils.file_utils import ensure_directory, generate_safe_filename
+from backend.config import settings
+from backend.database.repositories import create_file
+from backend.services.analysis_service import (
+    CSVAnalysisError,
+    get_organized_csv_record,
+    load_organized_csv,
+)
+from backend.utils.file_utils import ensure_dated_directory, generate_safe_filename
+from backend.utils.time_utils import time_now
 
 
 class DataCleaningError(Exception):
@@ -57,12 +62,44 @@ class CleaningPreviewResult:
 
 @dataclass
 class CleaningSaveResult:
+    csv_file_id: int
+    excel_file_id: int
     csv_path: Path
     excel_path: Path
     csv_filename: str
     excel_filename: str
     row_count: int
     column_count: int
+
+
+@dataclass(frozen=True)
+class CleaningColumnOptions:
+    numeric_columns: list[str]
+    text_columns: list[str]
+
+
+def load_cleaning_source(
+    session: Session,
+    file_id: int,
+) -> pd.DataFrame:
+    try:
+        _, dataframe = load_organized_csv(session, file_id)
+        return dataframe
+    except CSVAnalysisError as error:
+        raise DataCleaningError(str(error)) from error
+
+
+def get_cleaning_column_options(
+    dataframe: pd.DataFrame,
+) -> CleaningColumnOptions:
+    return CleaningColumnOptions(
+        numeric_columns=dataframe.select_dtypes(
+            include="number"
+        ).columns.tolist(),
+        text_columns=dataframe.select_dtypes(
+            include=["object", "string"]
+        ).columns.tolist(),
+    )
 
 # Duplicate Remover
 def remove_duplicates(
@@ -73,10 +110,10 @@ def remove_duplicates(
 
     if subset is not None:
         if not subset:
-            raise DataCleaningError("Column subset list cannot be an empty list")
+            raise DataCleaningError("Select at least one duplicate-check column.")
 
         if not set(subset).issubset(set(original_df.columns.tolist())):
-            raise DataCleaningError("Column subset list can only contain original columns")
+            raise DataCleaningError("Duplicate checking can only use columns from the original CSV.")
 
         cleaned_df = working_df.drop_duplicates(
             subset=subset,
@@ -105,10 +142,10 @@ def drop_rows_with_missing_values(
     
     if columns is not None:
         if not columns:
-            raise DataCleaningError("Columns list cannot be an empty list")
+            raise DataCleaningError("Select at least one column for missing-value removal.")
     
         if not set(columns).issubset(set(original_df.columns.tolist())):
-            raise DataCleaningError("Columns list can only contain original columns")
+            raise DataCleaningError("Missing-value removal can only use columns from the original CSV.")
     
         cleaned_df = working_df.dropna(
             subset=columns,
@@ -136,13 +173,13 @@ def fill_numeric_missing_values(
     cleaned_df = original_df.copy()
     
     if not column:
-        raise DataCleaningError("Column cannot be an empty")
+        raise DataCleaningError("Select a numeric column to fill.")
     
     if column not in original_df.columns:
         raise DataCleaningError(f"Column '{column}' must be an original column.")
 
     if not pd.api.types.is_numeric_dtype(original_df[column]):
-        raise DataCleaningError(f"Column {column} must be numeric")
+        raise DataCleaningError(f"Column '{column}' must be numeric.")
     
 
     replacement = None
@@ -156,7 +193,7 @@ def fill_numeric_missing_values(
                 raise DataCleaningError("A fill value is required for the constant strategy.")
             replacement = fill_value
         case _:
-            raise DataCleaningError(f"Provided '{strategy}' strategy is unsupported")
+            raise DataCleaningError(f"The '{strategy}' fill strategy is not supported.")
 
     if pd.isna(replacement):
         raise DataCleaningError(
@@ -185,13 +222,13 @@ def fill_text_missing_values(
     cleaned_df = original_df.copy()
     
     if not column:
-        raise DataCleaningError("Column cannot be an empty")
+        raise DataCleaningError("Select a text column to fill.")
     
     if column not in original_df.columns:
         raise DataCleaningError(f"Column '{column}' must be an original column.")
 
     if pd.api.types.is_numeric_dtype(original_df[column]):
-        raise DataCleaningError(f"Column {column} must be a text column")
+        raise DataCleaningError(f"Column '{column}' must be a text column.")
     
     if fill_value is None or fill_value == "":
         raise DataCleaningError("Fill value cannot be empty.")
@@ -217,15 +254,7 @@ def preview_cleaning(
     file_id: int,
     cleaning_options: CleaningOptions,
 ) -> CleaningPreviewResult:
-    file_record = read_file_by_id(session, file_id)
-
-    if file_record is None:
-        raise DataCleaningError("The selected file does not exist.")
-
-    if file_record.status.lower() != "organized":
-        raise ValueError("Selected CSV file is not organized yet")
-
-    original_df = load_csv_with_limits(file_record.storage_path)
+    original_df = load_cleaning_source(session, file_id)
     working_df = original_df.copy()
 
     duplicates_removed = 0
@@ -283,26 +312,28 @@ def save_cleaning_result(
     cleaned_dataframe: pd.DataFrame,
     date_value: datetime | None = None,
 ) -> CleaningSaveResult:
-    file_record = read_file_by_id(session, file_id)
-
-    if file_record is None:
-        raise DataCleaningError("The original file record does not exist.")
-
-    if file_record.status.lower() != "organized":
-        raise ValueError("Selected CSV file is not organized yet")
+    try:
+        file_record = get_organized_csv_record(session, file_id)
+    except CSVAnalysisError as error:
+        raise DataCleaningError(str(error)) from error
 
     if date_value is None:
         date_value = time_now()
         
-    year = date_value.strftime("%Y")
-    month = date_value.strftime("%m")
-    
-    csv_directory = ensure_directory(DATA_ROOT / "processed" / "cleaned"/ "csv" / year / month)
-    excel_directory = ensure_directory(DATA_ROOT / "processed" / "cleaned"/ "excel" / year / month)
+    csv_directory = ensure_dated_directory(
+        settings.DATA_ROOT / "processed" / "cleaned" / "csv",
+        date_value,
+    )
+    excel_directory = ensure_dated_directory(
+        settings.DATA_ROOT / "processed" / "cleaned" / "excel",
+        date_value,
+    )
 
     stem = Path(file_record.original_name).stem
-    csv_filename = generate_safe_filename(f"{stem}_cleaned.csv")
-    excel_filename = generate_safe_filename(f"{stem}_cleaned.xlsx")
+    csv_original_name = f"{stem}_cleaned.csv"
+    excel_original_name = f"{stem}_cleaned.xlsx"
+    csv_filename = generate_safe_filename(csv_original_name)
+    excel_filename = generate_safe_filename(excel_original_name)
     csv_path = csv_directory / csv_filename
     excel_path = excel_directory / excel_filename
 
@@ -317,12 +348,35 @@ def save_cleaning_result(
             excel_path,
             index=False,
         )
+        csv_record = create_file(
+            session=session,
+            original_name=csv_original_name,
+            stored_name=csv_filename,
+            extension="csv",
+            category="spreadsheets",
+            size_bytes=csv_path.stat().st_size,
+            storage_path=str(csv_path),
+            status="organized",
+        )
+        excel_record = create_file(
+            session=session,
+            original_name=excel_original_name,
+            stored_name=excel_filename,
+            extension="xlsx",
+            category="spreadsheets",
+            size_bytes=excel_path.stat().st_size,
+            storage_path=str(excel_path),
+            status="organized",
+        )
     except Exception:
+        session.rollback()
         csv_path.unlink(missing_ok=True)
         excel_path.unlink(missing_ok=True)
         raise
 
     return CleaningSaveResult(
+        csv_file_id=csv_record.id,
+        excel_file_id=excel_record.id,
         csv_path = csv_path,
         excel_path = excel_path,
         csv_filename = csv_filename,
@@ -330,6 +384,11 @@ def save_cleaning_result(
         row_count = cleaned_dataframe.shape[0],
         column_count = cleaned_dataframe.shape[1]
     )
+
+
+def discard_cleaning_result(result: CleaningSaveResult) -> None:
+    result.csv_path.unlink(missing_ok=True)
+    result.excel_path.unlink(missing_ok=True)
 
 
 

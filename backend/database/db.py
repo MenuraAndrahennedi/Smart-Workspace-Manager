@@ -7,6 +7,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from backend.config.settings import DATABASE_URL
 
 logger = logging.getLogger(__name__)
+SESSION_FINALIZED_KEY = "session_explicitly_finalized"
 
 
 class Base(DeclarativeBase):
@@ -33,7 +34,7 @@ def enable_sqlite_foreign_keys(engine: Engine) -> None:
 # Engine
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
+    echo=False,
 )
 enable_sqlite_foreign_keys(engine)
 
@@ -50,7 +51,8 @@ def get_db_session():
 
     try:
         yield session
-        session.commit()
+        if not session.info.pop(SESSION_FINALIZED_KEY, False):
+            session.commit()
 
     except Exception:
         session.rollback()

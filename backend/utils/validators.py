@@ -1,4 +1,9 @@
-from backend.utils.constants import MAX_FILENAME_LENGTH, SUPPORTED_FILE_TYPES, FILE_TYPE_GROUPS
+from backend.utils.constants import (
+    DEFAULT_ORGANIZER_CATEGORY,
+    MAX_FILENAME_LENGTH,
+    ORGANIZER_CATEGORY_RULES,
+    SUPPORTED_FILE_TYPES,
+)
 
 
 
@@ -29,7 +34,7 @@ def validate_file_extension(filename: str) -> str:
     if extension in SUPPORTED_FILE_TYPES:
         return extension
     else:
-        raise ValueError(f"{filename}'s file extension does not support")
+        raise ValueError(f"Files with the '.{extension}' extension are not supported.")
      
 
 def validate_file_size(filesize: int, max_size_bytes: int) -> int :
@@ -38,19 +43,19 @@ def validate_file_size(filesize: int, max_size_bytes: int) -> int :
     if not isinstance(max_size_bytes, int):
         raise TypeError(f"Max filesize must be an integer, got {type(max_size_bytes).__name__}.")
     if not filesize > 0 :
-        raise ValueError(f"{filesize} is invalid")
+        raise ValueError("The selected file is empty.")
     if not filesize <= max_size_bytes:
-        raise ValueError(f"{filesize} exceeds the maximum file size")
+        raise ValueError("The selected file exceeds the maximum allowed size.")
     return filesize
 
 def get_file_category(filename:str) -> str:
     extension = validate_file_extension(filename)
 
-    for filetype in FILE_TYPE_GROUPS.keys():
-        if extension in FILE_TYPE_GROUPS.get(filetype):
-            return filetype
-        
-    raise ValueError(f"No file category is found for {filename}")
+    for category, extensions in ORGANIZER_CATEGORY_RULES.items():
+        if extension in extensions:
+            return category
+
+    return DEFAULT_ORGANIZER_CATEGORY
 
 
 def find_unsupported_files(filenames: list) -> list:
