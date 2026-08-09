@@ -1,8 +1,8 @@
 # Smart Workspace Manager
 
-Smart Workspace Manager is a local Streamlit application for organizing files and working with spreadsheet datasets. It combines file storage, SQLite metadata, XLSX-to-CSV conversion, CSV analysis and cleaning, chart creation, and HTML/PDF reporting in one service-oriented Python project.
+Smart Workspace Manager is a Streamlit application for organizing files and working with spreadsheet datasets. It combines file storage, SQLite metadata, XLSX-to-CSV conversion, CSV analysis and cleaning, chart creation, and HTML/PDF reporting in one service-oriented Python project.
 
-The current repository contains the Phase 1 file-management and spreadsheet workflow through report generation, together with service-layer enforcement, logging, controlled errors, database/storage integration tests, and clean-environment release verification.
+Phase 1 is deployed to Azure App Service and continuously deployed from GitHub Actions. The repository includes the complete file-management and spreadsheet workflow through report generation, together with service-layer enforcement, logging, controlled errors, database/storage integration tests, and clean-environment release verification.
 
 ## Features
 
@@ -119,11 +119,12 @@ tests/
 
 data/              Local runtime state; ignored by Git
 docs/              Work plan, project notes, and SQL documentation
+.github/workflows/ Azure deployment workflow
 ```
 
 ## Requirements
 
-- Python 3.12
+- Python 3.12 (project target: 3.12.0; Azure runtime observed: 3.12.13)
 - PowerShell for the commands shown below
 - Local filesystem access
 
@@ -167,6 +168,52 @@ python -m streamlit run frontend/streamlit_app.py
 
 Open [http://localhost:8501](http://localhost:8501). Streamlit discovers the numbered pages under `frontend/pages/` automatically.
 
+## Azure Deployment
+
+Phase 1 was deployed and verified on August 9, 2026.
+
+| Resource | Configuration |
+| --- | --- |
+| Subscription | Azure for Students |
+| Resource group | `rg-smart-workspace-manager` |
+| Region | Central India |
+| App Service | `smart-workspace-manager-phase1` |
+| App Service plan | `asp-smart-workspace-manager-f1` |
+| Pricing tier | Free F1 |
+| Operating system | Linux |
+| Runtime | Python 3.12, Streamlit 1.59.2 |
+| Application port | `8000` |
+| Managed identity | `oidc-msi-82b6` |
+
+Azure starts the application with:
+
+```bash
+python scripts/init_db.py && python -m streamlit run frontend/streamlit_app.py --server.address 0.0.0.0 --server.port 8000 --server.headless true
+```
+
+The deployment stores persistent application data under `/home/data`:
+
+```text
+DATA_ROOT=/home/data
+DATABASE_URL=sqlite:////home/data/smart_workspace.db
+STORAGE_PROVIDER=local
+SCM_DO_BUILD_DURING_DEPLOYMENT=1
+```
+
+Azure App Service also defines `LOG_LEVEL`, `MAX_BAR_CATEGORIES`, `MAX_CHART_ROWS`, `MAX_CSV_ANALYSIS_SIZE_MB`, `MAX_CSV_COLUMNS`, `MAX_CSV_ROWS`, `MAX_FILENAME_ATTEMPTS`, `MAX_REPORT_CHARTS`, `MAX_UPLOAD_SIZE_MB`, `PYTHONUNBUFFERED`, and `SECRET_KEY`. `SECRET_KEY` is configured only as an Azure application setting and must never be committed.
+
+### GitHub Actions Deployment
+
+Pushes to `phase-1-azure-deployment` automatically run [`.github/workflows/deploy-azure.yml`](.github/workflows/deploy-azure.yml). The workflow signs in through Azure OIDC using a federated credential and deploys the repository to App Service; it does not use a publish profile or long-lived Azure password.
+
+The workflow requires these GitHub repository secrets:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+
+Deployment history is available in the repository's Actions page. Azure Deployment Center may show `Deployment provider: None` or `No deployments found`; this is expected because deployment is controlled directly by GitHub Actions.
+
 ## Configuration
 
 The application loads `.env` from the project root. The included `.env.example` is suitable for local development.
@@ -185,7 +232,7 @@ The application loads `.env` from the project root. The included `.env.example` 
 | `MAX_BAR_CATEGORIES`    | Maximum categories in a bar chart                                     | `30`                                  |
 | `MAX_REPORT_CHARTS`     | Maximum charts in one report                                          | `10`                                  |
 
-`SECRET_KEY` is reserved for a future authentication phase and is not used. `MAX_CSV_ANALYSIS_SIZE_MB` remains in the example file for compatibility, but the current CSV size limit follows `MAX_UPLOAD_SIZE_MB`.
+`SECRET_KEY` is reserved for a future authentication phase and is not used by Phase 1. It must still remain secret. `MAX_CSV_ANALYSIS_SIZE_MB` remains in the example file for compatibility, but the current CSV size limit follows `MAX_UPLOAD_SIZE_MB`.
 
 Do not commit `.env`, runtime databases, uploaded files, or generated reports.
 
@@ -308,20 +355,23 @@ See [SQL and SQLAlchemy notes](docs/sql/sql_crud.md) for the corresponding examp
 
 ## Known Limitations
 
-- Storage and SQLite are local only.
+- Storage uses the local filesystem. Azure persists it under `/home/data`, which is suitable for this single-instance demonstration but not for horizontal scaling.
 - There is no authentication, authorization, or per-user ownership.
 - CSV date strings are not parsed automatically; line charts recognize numeric columns and columns already typed as pandas datetime.
 - XLSX conversion supports `.xlsx` workbooks and converts one worksheet at a time.
 - HTML reports load Plotly JavaScript from a CDN, so interactive charts need internet access when the saved report is opened.
 - PDF report charts are static.
 - Large CSV and chart workloads are intentionally restricted by configuration limits.
-- The API, React client, Azure SQL, and deployment workflows are future work.
+- The Free F1 plan has no Always On support. Its limits include 60 CPU minutes per day, a 3-minute short CPU quota, 1,024 MiB memory, and 165 MiB outbound data. Azure may temporarily stop the application when a quota is exceeded.
+- SQLite must be replaced by Azure SQL or PostgreSQL before multi-instance or production use.
+- The API, React client, and Azure SQL are future work.
 
 ## Project Status
 
 - Core file, database, organization, dashboard, library, XLSX conversion, CSV analysis, cleaning, visualization, and reporting workflows are implemented.
 - Day 13-style hardening is present: pages call services, reusable errors are controlled, logging is configured, critical storage/database paths have integration tests, and a clean dependency installation has been verified.
-- FastAPI, React, authentication, authorization, cloud storage, Azure SQL, and deployment remain Phase 2 plans.
+- Phase 1 is deployed and verified on Azure App Service through GitHub Actions and OIDC authentication.
+- FastAPI, React, authentication, authorization, cloud storage, and Azure SQL remain Phase 2 plans.
 
 ## Documentation
 
