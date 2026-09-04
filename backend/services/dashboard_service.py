@@ -4,12 +4,13 @@ from backend.database.repositories import get_file_summary, get_recent_files, gr
 
 def get_dashboard_data(
     session: Session,
+    user_id: int,
     recent_limit: int = 5,
 ) -> dict:
-    file_summary = get_file_summary(session)
-    category_summary = group_files_by_category(session)
-    status_summary = group_files_by_status(session)
-    recent_files = get_recent_files(session, recent_limit)
+    file_summary = get_file_summary(session, user_id)
+    category_summary = group_files_by_category(session, user_id)
+    status_summary = group_files_by_status(session, user_id)
+    recent_files = get_recent_files(session, user_id, recent_limit)
 
     status_counts = {
         item["status"]: item["file_count"]

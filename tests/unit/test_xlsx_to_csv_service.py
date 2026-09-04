@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from backend.database.repositories import create_file, read_file_by_id
+from backend.database.repositories import create_file, get_file_by_id
 from backend.services.xlsx_to_csv_service import (
     XLSXConversionError,
     convert_xlsx_to_csv,
@@ -262,7 +262,7 @@ def test_convert_xlsx_to_csv_saves_managed_csv_and_preserves_source(
     ]
     assert workbook_path.read_bytes() == original_bytes
 
-    converted_record = read_file_by_id(test_session, result.file_id)
+    converted_record = get_file_by_id(test_session, result.file_id)
     assert converted_record.original_name == "sales_Sales.csv"
     assert converted_record.stored_name == result.csv_filename
     assert converted_record.extension == "csv"

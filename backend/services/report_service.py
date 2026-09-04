@@ -12,7 +12,10 @@ from backend.config import settings
 from backend.config.settings import MAX_REPORT_CHARTS
 from backend.database.models import FileRecord
 from backend.database.repositories import (
+    ResourceForbiddenError,
     create_report as create_report_record,
+    get_report_by_id,
+    get_reports_by_file_id,
     update_report,
 )
 from backend.services.analysis_service import CSVAnalysisError, load_organized_csv
@@ -43,6 +46,22 @@ class SavedReportResult:
     html_report_filename: str
     pdf_report_filename: str
     chart_count: int
+
+
+def list_reports_for_file(
+    session: Session,
+    file_id: int,
+    user_id: int,
+):
+    return get_reports_by_file_id(session, file_id, user_id)
+
+
+def get_saved_report(
+    session: Session,
+    report_id: int,
+    user_id: int,
+):
+    return get_report_by_id(session, report_id, user_id)
 
 def _generate_report_charts(
     dataframe,
@@ -157,6 +176,7 @@ def _build_pdf_report(
 def create_report(
     session: Session,
     file_id: int,
+    user_id: int,
     chart_configurations: list[ChartConfiguration],
     date_value: datetime | None = None,
 ) -> SavedReportResult:
@@ -167,7 +187,9 @@ def create_report(
         raise ReportGenerationError(f"A report can contain no more than {MAX_REPORT_CHARTS} charts.")
 
     try:
-        file_record, dataframe = load_organized_csv(session, file_id)
+        file_record, dataframe = load_organized_csv(session, file_id, user_id)
+    except (FileNotFoundError, ResourceForbiddenError):
+        raise
     except CSVAnalysisError as error:
         raise ReportGenerationError(str(error)) from error
     except Exception as error:
@@ -198,6 +220,7 @@ def create_report(
     html_report_record = create_report_record(
         session=session,
         file_id=file_id,
+        user_id=user_id,
         report_type="html",
         status="pending",
         report_path=str(html_report_path),
@@ -206,6 +229,7 @@ def create_report(
     pdf_report_record = create_report_record(
         session=session,
         file_id=file_id,
+        user_id=user_id,
         report_type="pdf",
         status="pending",
         report_path=str(pdf_report_path),
@@ -216,6 +240,7 @@ def create_report(
         html_report_record = update_report(
             session=session,
             report_id=html_report_record.id,
+            user_id=user_id,
             status="completed",
             report_path=str(html_report_path),
         )
@@ -225,11 +250,13 @@ def create_report(
         update_report(
             session=session,
             report_id=html_report_record.id,
+            user_id=user_id,
             status="failed",
         )
         update_report(
             session=session,
             report_id=pdf_report_record.id,
+            user_id=user_id,
             status="failed",
         )
         raise ReportGenerationError("The HTML report could not be saved.") from error
@@ -239,6 +266,7 @@ def create_report(
         pdf_report_record = update_report(
             session=session,
             report_id=pdf_report_record.id,
+            user_id=user_id,
             status="completed",
             report_path=str(pdf_report_path),
         )
@@ -247,6 +275,7 @@ def create_report(
         update_report(
             session=session,
             report_id=pdf_report_record.id,
+            user_id=user_id,
             status="failed",
         )
         raise ReportGenerationError("The PDF report could not be saved.") from error

@@ -64,6 +64,9 @@ def get_log_value_accepted(log_value: str) -> str:
     else:
         raise ValueError(f"Cannot accept {log_value} log value")
 
+def get_valid_frontend_origin(name: str) -> str:
+    uri = get_env_variable(name)
+    return uri
 
 DATABASE_URL = get_valid_database_url("DATABASE_URL")
 DATA_ROOT = get_or_create_path(get_env_variable("DATA_ROOT"))
@@ -83,3 +86,5 @@ MAX_CSV_COLUMNS=get_int("MAX_CSV_COLUMNS")
 MAX_CHART_ROWS=get_int("MAX_CHART_ROWS")
 MAX_BAR_CATEGORIES=get_int("MAX_BAR_CATEGORIES")
 MAX_REPORT_CHARTS=get_int("MAX_REPORT_CHARTS")
+
+FRONTEND_ORIGIN=get_valid_frontend_origin("FRONTEND_ORIGIN")

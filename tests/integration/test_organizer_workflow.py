@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from backend.database.models import AutomationLog
-from backend.database.repositories import create_file, read_file_by_id
+from backend.database.repositories import create_file, get_file_by_id
 from backend.services import automation_service
 from backend.services.automation_service import organize_uploaded_file
 
@@ -55,7 +55,7 @@ def test_organizer_moves_file_and_updates_database_successfully(
         / "08"
         / "report.csv"
     )
-    updated_record = read_file_by_id(test_session, file_record.id)
+    updated_record = get_file_by_id(test_session, file_record.id)
 
     assert result.destination_path == expected_path
     assert result.category == "spreadsheets"
@@ -112,7 +112,7 @@ def test_organizer_restores_file_when_database_update_fails(
             source_path=source,
         )
 
-    failed_record = read_file_by_id(test_session, file_record.id)
+    failed_record = get_file_by_id(test_session, file_record.id)
     assert failed_record is not None
     assert failed_record.storage_path == str(source)
     assert failed_record.category == "spreadsheets"
@@ -204,7 +204,7 @@ def test_organizer_logs_duplicate_destination_failure(
             source_path=source,
         )
 
-    failed_record = read_file_by_id(test_session, file_record.id)
+    failed_record = get_file_by_id(test_session, file_record.id)
     assert failed_record is not None
     assert failed_record.storage_path == str(source)
     assert failed_record.status == "failed"
@@ -261,7 +261,7 @@ def test_success_log_failure_rolls_back_location_before_failed_state_is_saved(
             source_path=source,
         )
 
-    failed_record = read_file_by_id(test_session, file_record.id)
+    failed_record = get_file_by_id(test_session, file_record.id)
     assert failed_record is not None
     assert failed_record.storage_path == str(source)
     assert failed_record.category == "spreadsheets"

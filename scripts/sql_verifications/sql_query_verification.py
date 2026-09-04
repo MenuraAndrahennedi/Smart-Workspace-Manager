@@ -11,6 +11,8 @@ from backend.database.db import Base, enable_sqlite_foreign_keys
 from backend.database.models import FileRecord
 from backend.database.repositories import count_files, get_all_files, get_file_summary, get_recent_files, group_files_by_category, query_files
 
+VERIFICATION_USER_ID = 1
+
 
 def escape_like_pattern(value: str) -> str:
     return (
@@ -21,6 +23,20 @@ def escape_like_pattern(value: str) -> str:
 
 
 def seed_query_data(connection: Connection) -> None:
+    connection.execute(
+        text(
+            """
+            INSERT INTO users (id, email, password_hash)
+            VALUES (:id, :email, :password_hash)
+            """
+        ),
+        {
+            "id": VERIFICATION_USER_ID,
+            "email": "query-verification@example.com",
+            "password_hash": "verification-only",
+        },
+    )
+
     sample_files = [
         {
             "original_name": "sales_2026.csv",
@@ -93,6 +109,7 @@ def seed_query_data(connection: Connection) -> None:
     insert_query = text(
         """
         INSERT INTO files (
+            user_id,
             original_name,
             stored_name,
             extension,
@@ -104,6 +121,7 @@ def seed_query_data(connection: Connection) -> None:
             updated_at
         )
         VALUES (
+            :user_id,
             :original_name,
             :stored_name,
             :extension,
@@ -117,78 +135,98 @@ def seed_query_data(connection: Connection) -> None:
         """
     )
 
+    for sample_file in sample_files:
+        sample_file["user_id"] = VERIFICATION_USER_ID
+
     # Passing a list of dictionaries performs parameterized executemany
     connection.execute(insert_query, sample_files)
 
 
-def list_files_sql(connection: Connection) -> list[dict]:
+def list_files_sql(connection: Connection, user_id: int) -> list[dict]:
     query = text("""
         SELECT*
         FROM files
+        WHERE user_id = :user_id
         ORDER BY created_at DESC, id DESC;
     """)
 
-    results: list = connection.execute(query).mappings().all()
+    results: list = connection.execute(
+        query,
+        {"user_id": user_id},
+    ).mappings().all()
 
     return [dict(row) for row in results]
 
 
 def search_files_sql(
     connection: Connection,
+    user_id: int,
     search_term: str,
 ) -> list[dict]:
     search_pattern = f"%{escape_like_pattern(search_term.strip())}%"
     query = text("""
         SELECT *
         FROM files
-        WHERE LOWER(original_name) LIKE LOWER(:search_pattern) ESCAPE '\\'
+        WHERE user_id = :user_id
+          AND (
+            LOWER(original_name) LIKE LOWER(:search_pattern) ESCAPE '\\'
             OR LOWER(stored_name) LIKE LOWER(:search_pattern) ESCAPE '\\'
+          )
         ORDER BY updated_at DESC, id DESC;
     """)
 
-    results: list = connection.execute(query, {"search_pattern": search_pattern}).mappings().all()
+    results: list = connection.execute(
+        query,
+        {"user_id": user_id, "search_pattern": search_pattern},
+    ).mappings().all()
 
     return [dict(row) for row in results]
 
 
 def filter_files_by_category_sql(
     connection: Connection,
+    user_id: int,
     selected_category: str,
 ) -> list[dict]:
 
     query = text("""
         SELECT *
         FROM files
-        WHERE category = :selected_category
+        WHERE user_id = :user_id AND category = :selected_category
         ORDER BY updated_at DESC, id DESC;
     """)
 
     results = connection.execute(
         query,
-        {"selected_category": selected_category},
+        {"user_id": user_id, "selected_category": selected_category},
     ).mappings().all()
 
     return [dict(row) for row in results]
 
 def filter_files_by_status_sql(
     connection: Connection,
+    user_id: int,
     selected_status: str,
 ) -> list[dict]:
 
     query = text("""
         SELECT *
         FROM files
-        WHERE status = :selected_status
+        WHERE user_id = :user_id AND status = :selected_status
         ORDER BY updated_at DESC, id DESC;
     """)
 
-    results = connection.execute(query, {"selected_status": selected_status}).mappings().all()
+    results = connection.execute(
+        query,
+        {"user_id": user_id, "selected_status": selected_status},
+    ).mappings().all()
 
     return [dict(row) for row in results]
 
 
 def query_files_combined_sql(
     connection: Connection,
+    user_id: int,
     search_term: str | None = None,
     category: str | list[str] | None = None,
     status: str | list[str] | None = None,
@@ -196,8 +234,8 @@ def query_files_combined_sql(
     cleaned_search_term = search_term.strip() if search_term else None
     category_values = normalize_filter_values(category)
     status_values = normalize_filter_values(status)
-    where_clauses: list[str] = []
-    parameters: dict = {}
+    where_clauses: list[str] = ["user_id = :user_id"]
+    parameters: dict = {"user_id": user_id}
 
     if cleaned_search_term:
         where_clauses.append(
@@ -242,33 +280,39 @@ def query_files_combined_sql(
     return [dict(row) for row in rows]
 
 
-def count_files_sql(connection: Connection) -> int:
+def count_files_sql(connection: Connection, user_id: int) -> int:
 
     query = text("""
         SELECT COUNT(*) AS total_files
-        FROM files;
+        FROM files
+        WHERE user_id = :user_id;
     """)
 
-    result = connection.execute(query).scalar_one()
+    result = connection.execute(query, {"user_id": user_id}).scalar_one()
 
     return result
 
 
-def get_file_summary_sql(connection: Connection) -> dict:
+def get_file_summary_sql(connection: Connection, user_id: int) -> dict:
 
     query = text("""
         SELECT
             COUNT(*) AS total_files,
             COALESCE(SUM(size_bytes), 0) AS total_size_bytes
-        FROM files;
+        FROM files
+        WHERE user_id = :user_id;
     """)
 
-    result = connection.execute(query).mappings().one()
+    result = connection.execute(
+        query,
+        {"user_id": user_id},
+    ).mappings().one()
 
     return dict(result)
 
 def group_files_by_category_sql(
     connection: Connection,
+    user_id: int,
 ) -> list[dict]:
 
     query = text("""
@@ -277,28 +321,37 @@ def group_files_by_category_sql(
             COUNT(*) AS file_count,
             COALESCE(SUM(size_bytes), 0) AS total_size_bytes
         FROM files
+        WHERE user_id = :user_id
         GROUP BY category
         ORDER BY file_count DESC, category ASC;
     """)
 
-    results = connection.execute(query).mappings().all()
+    results = connection.execute(
+        query,
+        {"user_id": user_id},
+    ).mappings().all()
 
     return [dict(row) for row in results]
 
 
 def get_recent_files_sql(
     connection: Connection,
+    user_id: int,
     limit: int = 5,
 ) -> list[dict]:
 
     query = text("""
         SELECT *
         FROM files
+        WHERE user_id = :user_id
         ORDER BY updated_at DESC, id DESC
         LIMIT :limit_value;
     """)
 
-    results = connection.execute(query,{"limit_value": limit}).mappings().all()
+    results = connection.execute(
+        query,
+        {"user_id": user_id, "limit_value": limit},
+    ).mappings().all()
 
     return [dict(row) for row in results]
 
@@ -309,6 +362,7 @@ def normalize_sql_file_rows(
     return [
         {
             "id": row["id"],
+            "user_id": row["user_id"],
             "original_name": row["original_name"],
             "stored_name": row["stored_name"],
             "extension": row["extension"],
@@ -343,6 +397,7 @@ def normalize_orm_file_records(
     return [
         {
             "id": record.id,
+            "user_id": record.user_id,
             "original_name": record.original_name,
             "stored_name": record.stored_name,
             "extension": record.extension,
@@ -362,11 +417,11 @@ def compare_sql_and_orm_outputs(
 ) -> None:
     # 1. List all files
     raw_files = normalize_sql_file_rows(
-        list_files_sql(connection)
+        list_files_sql(connection, VERIFICATION_USER_ID)
     )
 
     orm_files = normalize_orm_file_records(
-        get_all_files(session)
+        get_all_files(session, VERIFICATION_USER_ID)
     )
 
     assert raw_files == orm_files
@@ -376,6 +431,7 @@ def compare_sql_and_orm_outputs(
     raw_search = normalize_sql_file_rows(
         search_files_sql(
             connection=connection,
+            user_id=VERIFICATION_USER_ID,
             search_term="report",
         )
     )
@@ -383,6 +439,7 @@ def compare_sql_and_orm_outputs(
     orm_search = normalize_orm_file_records(
         query_files(
             session=session,
+            user_id=VERIFICATION_USER_ID,
             search_term="report",
         )
     )
@@ -394,12 +451,14 @@ def compare_sql_and_orm_outputs(
         raw_literal_search = normalize_sql_file_rows(
             search_files_sql(
                 connection=connection,
+                user_id=VERIFICATION_USER_ID,
                 search_term=literal_search_term,
             )
         )
         orm_literal_search = normalize_orm_file_records(
             query_files(
                 session=session,
+                user_id=VERIFICATION_USER_ID,
                 search_term=literal_search_term,
             )
         )
@@ -410,6 +469,7 @@ def compare_sql_and_orm_outputs(
     raw_category = normalize_sql_file_rows(
         filter_files_by_category_sql(
             connection=connection,
+            user_id=VERIFICATION_USER_ID,
             selected_category="spreadsheets",
         )
     )
@@ -417,6 +477,7 @@ def compare_sql_and_orm_outputs(
     orm_category = normalize_orm_file_records(
         query_files(
             session=session,
+            user_id=VERIFICATION_USER_ID,
             category="spreadsheets",
         )
     )
@@ -428,6 +489,7 @@ def compare_sql_and_orm_outputs(
     raw_status = normalize_sql_file_rows(
         filter_files_by_status_sql(
             connection=connection,
+            user_id=VERIFICATION_USER_ID,
             selected_status="organized",
         )
     )
@@ -435,6 +497,7 @@ def compare_sql_and_orm_outputs(
     orm_status = normalize_orm_file_records(
         query_files(
             session=session,
+            user_id=VERIFICATION_USER_ID,
             status="organized",
         )
     )
@@ -446,6 +509,7 @@ def compare_sql_and_orm_outputs(
     raw_combined = normalize_sql_file_rows(
         query_files_combined_sql(
             connection=connection,
+            user_id=VERIFICATION_USER_ID,
             search_term="report",
             category="pdf",
             status="organized",
@@ -455,6 +519,7 @@ def compare_sql_and_orm_outputs(
     orm_combined = normalize_orm_file_records(
         query_files(
             session=session,
+            user_id=VERIFICATION_USER_ID,
             search_term="report",
             category="pdf",
             status="organized",
@@ -468,6 +533,7 @@ def compare_sql_and_orm_outputs(
     raw_multi_filter = normalize_sql_file_rows(
         query_files_combined_sql(
             connection=connection,
+            user_id=VERIFICATION_USER_ID,
             category=["spreadsheets", "pdf"],
             status=["organized"],
         )
@@ -476,6 +542,7 @@ def compare_sql_and_orm_outputs(
     orm_multi_filter = normalize_orm_file_records(
         query_files(
             session=session,
+            user_id=VERIFICATION_USER_ID,
             category=["spreadsheets", "pdf"],
             status=["organized"],
         )
@@ -485,22 +552,22 @@ def compare_sql_and_orm_outputs(
     print("PASS: Combined multiple category and status filters")
 
     # 7. Count files
-    raw_count = count_files_sql(connection)
-    orm_count = count_files(session)
+    raw_count = count_files_sql(connection, VERIFICATION_USER_ID)
+    orm_count = count_files(session, VERIFICATION_USER_ID)
 
     assert raw_count == orm_count
     print("PASS: File count")
 
     # 8. File summary
-    raw_summary = get_file_summary_sql(connection)
-    orm_summary = get_file_summary(session)
+    raw_summary = get_file_summary_sql(connection, VERIFICATION_USER_ID)
+    orm_summary = get_file_summary(session, VERIFICATION_USER_ID)
 
     assert raw_summary == orm_summary
     print("PASS: File summary")
 
     # 9. Group by category
-    raw_grouped = group_files_by_category_sql(connection)
-    orm_grouped = group_files_by_category(session)
+    raw_grouped = group_files_by_category_sql(connection, VERIFICATION_USER_ID)
+    orm_grouped = group_files_by_category(session, VERIFICATION_USER_ID)
 
     assert raw_grouped == orm_grouped
     print("PASS: Group by category")
@@ -509,6 +576,7 @@ def compare_sql_and_orm_outputs(
     raw_recent = normalize_sql_file_rows(
         get_recent_files_sql(
             connection=connection,
+            user_id=VERIFICATION_USER_ID,
             limit=3,
         )
     )
@@ -516,6 +584,7 @@ def compare_sql_and_orm_outputs(
     orm_recent = normalize_orm_file_records(
         get_recent_files(
             session=session,
+            user_id=VERIFICATION_USER_ID,
             limit=3,
         )
     )

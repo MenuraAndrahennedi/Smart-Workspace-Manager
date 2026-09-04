@@ -46,8 +46,9 @@ def build_destination_directory(
 
 def organize_uploaded_file(
     session: Session,
-    file_id: int, 
-    source_path: Path
+    file_id: int,
+    user_id: int,
+    source_path: Path,
 ) -> OrganizationResult:
     source_path = Path(source_path)
     file_category = detect_file_category(source_path.name)
@@ -61,6 +62,7 @@ def organize_uploaded_file(
             updated_file_record = update_file_location(
                 session=session,
                 file_id = file_id,
+                user_id=user_id,
                 new_path = moved_path,
                 category = file_category,
                 status = "organized",
@@ -105,6 +107,7 @@ def organize_uploaded_file(
                 update_file_location(
                     session=session,
                     file_id=file_id,
+                    user_id=user_id,
                     new_path=failure_path,
                     category=file_category,
                     status="failed",

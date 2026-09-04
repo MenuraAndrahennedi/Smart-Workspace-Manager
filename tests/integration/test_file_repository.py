@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from backend.database.db import Base, enable_sqlite_foreign_keys
 from backend.database.repositories import (
     create_file,
-    read_file_by_id,
+    get_file_by_id,
     get_all_files,
     update_file,
     delete_file,
@@ -41,7 +41,7 @@ def test_file_repository_CRUD(tmp_path):
 
         assert created_file.id is not None
 
-        read_file = read_file_by_id(session, created_file.id)
+        read_file = get_file_by_id(session, created_file.id)
         assert read_file is not None
         assert read_file.original_name == "report.csv"
 
@@ -63,7 +63,7 @@ def test_file_repository_CRUD(tmp_path):
         deleted_file = delete_file(session, created_file.id)
         assert deleted_file is True
 
-        missing_file = read_file_by_id(session, created_file.id)
+        missing_file = get_file_by_id(session, created_file.id)
         assert missing_file is None
 
 

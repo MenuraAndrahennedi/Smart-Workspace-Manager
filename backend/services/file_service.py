@@ -25,7 +25,7 @@ from backend.database.repositories import (
     delete_file,
     get_report_storage_paths,
     query_files,
-    read_file_by_id,
+    get_file_by_id,
 )
 from backend.config.settings import MAX_FILENAME_ATTEMPTS, MAX_UPLOAD_SIZE_BYTES
 
@@ -60,12 +60,14 @@ def read_managed_file_bytes(storage_path: str | Path) -> bytes:
 
 def get_library_files(
     session: Session,
+    user_id: int,
     search_term: str | None = None,
     category: str | list[str] | None = None,
     status: str | list[str] | None = None,
 ) -> list[FileRecord]:
     return query_files(
         session=session,
+        user_id=user_id,
         search_term=search_term,
         category=category,
         status=status,
@@ -84,6 +86,7 @@ def upload_file(
     filename: str,
     file_bytes: bytes,
     session: Session,
+    user_id: int,
 ) -> FileUploadResult:
     filesize_bytes = len(file_bytes)
     filename = validate_upload(filename, filesize_bytes)
@@ -104,13 +107,14 @@ def upload_file(
 
         extension = get_file_extension(stored_filename)
         file_record = create_file(
-            session,
-            filename,
-            stored_filename,
-            extension,
-            get_file_category(filename),
-            filesize_bytes,
-            str(saved_path)
+            session=session,
+            user_id=user_id,
+            original_name=filename,
+            stored_name=stored_filename,
+            extension=extension,
+            category=get_file_category(filename),
+            size_bytes=filesize_bytes,
+            storage_path=str(saved_path),
         )
         return FileUploadResult(
             file_id=file_record.id,
@@ -134,10 +138,12 @@ def upload_file(
 def delete_actual_file(
     session: Session,
     file_id: int,
+    user_id: int,
 ) -> dict[str, object]:
-    file_record = read_file_by_id(
+    file_record = get_file_by_id(
         session=session,
         file_id=file_id,
+        user_id=user_id,
     )
 
     if file_record is None:
@@ -149,6 +155,7 @@ def delete_actual_file(
     report_paths = get_report_storage_paths(
         session=session,
         file_id=file_id,
+        user_id=user_id,
     )
     staged_deletions = stage_files_for_deletion(
         [storage_path, *report_paths]
@@ -158,6 +165,7 @@ def delete_actual_file(
         db_record_deleted = delete_file(
             session=session,
             file_id=file_id,
+            user_id=user_id,
         )
         if not db_record_deleted:
             raise FileNotFoundError(

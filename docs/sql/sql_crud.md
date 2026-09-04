@@ -91,7 +91,7 @@ FROM files
 WHERE id = :file_id;
 ```
 
-SQLAlchemy repository equivalent: `read_file_by_id()`.
+SQLAlchemy repository equivalent: `get_file_by_id()`.
 
 ### Select All Files
 

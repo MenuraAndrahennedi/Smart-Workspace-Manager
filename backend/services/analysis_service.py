@@ -11,7 +11,7 @@ from pandas.api.types import is_numeric_dtype
 
 from backend.config.settings import MAX_CSV_ANALYSIS_SIZE_MB, MAX_CSV_ROWS, MAX_CSV_COLUMNS
 from backend.database.models import FileRecord
-from backend.database.repositories import query_files, read_file_by_id, create_analysis_job, update_analysis_job 
+from backend.database.repositories import query_files, get_file_by_id, create_analysis_job, update_analysis_job
 from backend.utils.validators import validate_file_extension
 from backend.services.storage_service import resolve_managed_path
 
@@ -41,6 +41,23 @@ class CSVAnalysisResult:
 class RecordedCSVAnalysis:
     job_id: int
     result: CSVAnalysisResult
+
+    def to_api_response(self) -> dict:
+        return {
+            "job_id": self.job_id,
+            "result": {
+                "preview": self.result.preview.to_dict(orient="records"),
+                "row_count": self.result.row_count,
+                "column_count": self.result.column_count,
+                "columns": self.result.columns,
+                "data_types": self.result.data_types,
+                "missing_values": self.result.missing_values,
+                "duplicate_count": self.result.duplicate_count,
+                "descriptive_statistics": self.result.descriptive_statistics.reset_index().to_dict(
+                    orient="records"
+                ),
+            },
+        }
 
 def load_csv_with_limits(csv_path: Path) -> pd.DataFrame:
     csv_path = resolve_managed_path(
@@ -133,9 +150,13 @@ def analyze_csv(csv_path: Path, preview_rows: int = 5) -> CSVAnalysisResult:
     
 
 
-def get_analyzable_csv_files(session: Session) -> list[FileRecord]:
+def get_analyzable_csv_files(
+    session: Session,
+    user_id: int,
+) -> list[FileRecord]:
     files = query_files(
-        session,
+        session=session,
+        user_id=user_id,
         category=["spreadsheets"],
         status=["organized"],
     )
@@ -151,8 +172,9 @@ def get_analyzable_csv_files(session: Session) -> list[FileRecord]:
 def get_organized_csv_record(
     session: Session,
     file_id: int,
+    user_id: int,
 ) -> FileRecord:
-    file_record = read_file_by_id(session, file_id)
+    file_record = get_file_by_id(session, file_id, user_id)
     if file_record is None:
         raise CSVAnalysisError("The selected file does not exist.")
     if file_record.extension.lstrip(".").lower() != "csv":
@@ -165,16 +187,18 @@ def get_organized_csv_record(
 def load_organized_csv(
     session: Session,
     file_id: int,
+    user_id: int,
 ) -> tuple[FileRecord, pd.DataFrame]:
-    file_record = get_organized_csv_record(session, file_id)
+    file_record = get_organized_csv_record(session, file_id, user_id)
     return file_record, load_csv_with_limits(file_record.storage_path)
 
 def analyze_file_and_record_job(
     session: Session,
     file_id: int,
+    user_id: int,
     preview_rows: int = 10,
 ) -> RecordedCSVAnalysis:
-    file_record = get_organized_csv_record(session, file_id)
+    file_record = get_organized_csv_record(session, file_id, user_id)
 
     requested_options = {
         "preview_rows": preview_rows,
@@ -183,6 +207,7 @@ def analyze_file_and_record_job(
     analysis_job = create_analysis_job(
         session=session,
         file_id=file_record.id,
+        user_id=user_id,
         status="running",
         requested_options=json.dumps(requested_options),
     )
@@ -208,6 +233,7 @@ def analyze_file_and_record_job(
         update_analysis_job(
             session=session,
             job_id=analysis_job.id,
+            user_id=user_id,
             status="completed",
             summary=json.dumps(summary),
             error_message=None,
@@ -222,6 +248,7 @@ def analyze_file_and_record_job(
         update_analysis_job(
             session=session,
             job_id=analysis_job.id,
+            user_id=user_id,
             status="failed",
             summary=None,
             error_message=str(error),
@@ -233,6 +260,7 @@ def analyze_file_and_record_job(
         update_analysis_job(
             session=session,
             job_id=analysis_job.id,
+            user_id=user_id,
             status="failed",
             summary=None,
             error_message="An unexpected error occurred while analyzing the CSV.",
@@ -313,6 +341,7 @@ def _apply_text_filter(
 def filter_csv_data(
     session: Session,
     file_id: int,
+    user_id: int,
     selected_columns: list[str],
     filter_column: str | None = None,
     operator: str | None = None,
@@ -322,7 +351,7 @@ def filter_csv_data(
     if maximum_result_rows < 1:
         raise ValueError("maximum_result_rows must be at least 1.")
 
-    _, dataframe = load_organized_csv(session, file_id)
+    _, dataframe = load_organized_csv(session, file_id, user_id)
 
     if not selected_columns:
         raise CSVAnalysisError("Select at least one column.")

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import settings
 from backend.database.models import FileRecord
-from backend.database.repositories import create_file, query_files, read_file_by_id
+from backend.database.repositories import create_file, get_file_by_id, query_files
 from backend.services.storage_service import delete_stored_file, resolve_managed_path
 from backend.utils.file_utils import ensure_dated_directory, generate_safe_filename
 from backend.utils.time_utils import time_now
@@ -38,9 +38,13 @@ class XLSXConversionResult:
     size_bytes: int
 
 
-def get_convertible_xlsx_files(session: Session) -> list[FileRecord]:
+def get_convertible_xlsx_files(
+    session: Session,
+    user_id: int,
+) -> list[FileRecord]:
     files = query_files(
         session=session,
+        user_id=user_id,
         category=["spreadsheets"],
         status=["organized"],
     )
@@ -52,8 +56,12 @@ def get_convertible_xlsx_files(session: Session) -> list[FileRecord]:
     return sorted(xlsx_files, key=attrgetter("updated_at"), reverse=True)
 
 
-def get_organized_xlsx_record(session: Session, file_id: int) -> FileRecord:
-    file_record = read_file_by_id(session, file_id)
+def get_organized_xlsx_record(
+    session: Session,
+    file_id: int,
+    user_id: int,
+) -> FileRecord:
+    file_record = get_file_by_id(session, file_id, user_id)
     if file_record is None:
         raise XLSXConversionError("The selected workbook does not exist.")
     if file_record.extension.lstrip(".").lower() != "xlsx":
@@ -63,8 +71,12 @@ def get_organized_xlsx_record(session: Session, file_id: int) -> FileRecord:
     return file_record
 
 
-def _get_workbook_path(session: Session, file_id: int) -> tuple[FileRecord, Path]:
-    file_record = get_organized_xlsx_record(session, file_id)
+def _get_workbook_path(
+    session: Session,
+    file_id: int,
+    user_id: int,
+) -> tuple[FileRecord, Path]:
+    file_record = get_organized_xlsx_record(session, file_id, user_id)
     try:
         workbook_path = resolve_managed_path(
             file_record.storage_path,
@@ -91,8 +103,12 @@ def _open_workbook(workbook_path: Path) -> pd.ExcelFile:
         ) from error
 
 
-def get_xlsx_sheet_names(session: Session, file_id: int) -> list[str]:
-    _, workbook_path = _get_workbook_path(session, file_id)
+def get_xlsx_sheet_names(
+    session: Session,
+    file_id: int,
+    user_id: int,
+) -> list[str]:
+    _, workbook_path = _get_workbook_path(session, file_id, user_id)
     with _open_workbook(workbook_path) as workbook:
         sheet_names = list(workbook.sheet_names)
     if not sheet_names:
@@ -103,12 +119,13 @@ def get_xlsx_sheet_names(session: Session, file_id: int) -> list[str]:
 def _load_xlsx_sheet(
     session: Session,
     file_id: int,
+    user_id: int,
     sheet_name: str,
 ) -> tuple[FileRecord, pd.DataFrame]:
     if not sheet_name:
         raise XLSXConversionError("Select a worksheet to convert.")
 
-    file_record, workbook_path = _get_workbook_path(session, file_id)
+    file_record, workbook_path = _get_workbook_path(session, file_id, user_id)
     with _open_workbook(workbook_path) as workbook:
         if sheet_name not in workbook.sheet_names:
             raise XLSXConversionError(
@@ -143,13 +160,14 @@ def _load_xlsx_sheet(
 def preview_xlsx_sheet(
     session: Session,
     file_id: int,
+    user_id: int,
     sheet_name: str,
     preview_rows: int = 10,
 ) -> XLSXPreviewResult:
     if preview_rows <= 0:
         raise XLSXConversionError("Preview rows must be greater than zero.")
 
-    _, dataframe = _load_xlsx_sheet(session, file_id, sheet_name)
+    _, dataframe = _load_xlsx_sheet(session, file_id, user_id, sheet_name)
     return XLSXPreviewResult(
         dataframe=dataframe.head(preview_rows).copy(),
         sheet_name=sheet_name,
@@ -167,10 +185,16 @@ def _build_csv_name(workbook_name: str, sheet_name: str) -> str:
 def convert_xlsx_to_csv(
     session: Session,
     file_id: int,
+    user_id: int,
     sheet_name: str,
     date_value: datetime | None = None,
 ) -> XLSXConversionResult:
-    file_record, dataframe = _load_xlsx_sheet(session, file_id, sheet_name)
+    file_record, dataframe = _load_xlsx_sheet(
+        session,
+        file_id,
+        user_id,
+        sheet_name,
+    )
     if date_value is None:
         date_value = time_now()
 
@@ -186,6 +210,7 @@ def convert_xlsx_to_csv(
         dataframe.to_csv(csv_path, index=False, encoding="utf-8-sig")
         converted_record = create_file(
             session=session,
+            user_id=user_id,
             original_name=original_csv_name,
             stored_name=csv_filename,
             extension="csv",

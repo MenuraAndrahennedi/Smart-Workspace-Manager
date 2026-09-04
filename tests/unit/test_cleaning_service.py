@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from backend.database.repositories import create_file, read_file_by_id
+from backend.database.repositories import create_file, get_file_by_id
 from backend.services.analysis_service import get_analyzable_csv_files
 from backend.services.cleaning_service import (
     CleaningOptions,
@@ -393,8 +393,8 @@ def test_save_cleaning_result_creates_csv_and_excel_files(
     assert result.row_count == 2
     assert result.column_count == 3
 
-    csv_record = read_file_by_id(test_session, result.csv_file_id)
-    excel_record = read_file_by_id(test_session, result.excel_file_id)
+    csv_record = get_file_by_id(test_session, result.csv_file_id)
+    excel_record = get_file_by_id(test_session, result.excel_file_id)
     assert csv_record.storage_path == str(result.csv_path)
     assert csv_record.extension == "csv"
     assert csv_record.status == "organized"

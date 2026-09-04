@@ -3,8 +3,11 @@ from collections.abc import Generator
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from fastapi.testclient import TestClient
 
 from backend.database.db import Base, enable_sqlite_foreign_keys
+from backend.dependencies.database_dependency import get_db
+from backend.main import app
 
 
 @pytest.fixture
@@ -43,3 +46,15 @@ def test_session(test_engine) -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+@pytest.fixture
+def client(test_session):
+    def override_get_db():
+        yield test_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+    app.dependency_overrides.clear()

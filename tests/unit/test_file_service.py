@@ -314,7 +314,7 @@ def test_delete_actual_file_deletes_database_record_and_storage_file(monkeypatch
 
     monkeypatch.setattr(
         file_service,
-        "read_file_by_id",
+        "get_file_by_id",
         lambda session, file_id: SimpleNamespace(
             original_name="report.csv",
             storage_path=str(stored_file),
@@ -364,7 +364,7 @@ def test_delete_actual_file_allows_missing_storage_file_for_stale_record(monkeyp
 
     monkeypatch.setattr(
         file_service,
-        "read_file_by_id",
+        "get_file_by_id",
         lambda session, file_id: SimpleNamespace(
             original_name="missing.csv",
             storage_path=str(missing_file),
@@ -388,7 +388,7 @@ def test_delete_actual_file_allows_missing_storage_file_for_stale_record(monkeyp
 def test_delete_actual_file_raises_when_database_record_is_missing(monkeypatch):
     delete_calls = []
 
-    monkeypatch.setattr(file_service, "read_file_by_id", lambda session, file_id: None)
+    monkeypatch.setattr(file_service, "get_file_by_id", lambda session, file_id: None)
     monkeypatch.setattr(
         file_service,
         "delete_file",
@@ -421,7 +421,7 @@ def test_delete_actual_file_restores_staged_file_when_database_flush_fails(
 
     monkeypatch.setattr(
         file_service,
-        "read_file_by_id",
+        "get_file_by_id",
         lambda session, file_id: SimpleNamespace(
             original_name="unsafe.csv",
             storage_path=str(stored_file),

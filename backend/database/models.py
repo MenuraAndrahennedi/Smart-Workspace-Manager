@@ -71,6 +71,16 @@ class FileRecord(Base):
         passive_deletes=True,
     )
 
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    owner: Mapped["User"] = relationship(
+        back_populates="files"
+    )
+
 
 # Stores every time the user analyzes a CSV file.
 class AnalysisJob(Base):
@@ -235,6 +245,24 @@ class AppSetting(Base):
 
 
 
+# User
+class User(Base):
+    __tablename__ = "users"
 
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=False,
+    )
+    password_hash: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    files: Mapped[list["FileRecord"]] = relationship(
+        back_populates="owner",
+        passive_deletes=True,
+    )
 
 
