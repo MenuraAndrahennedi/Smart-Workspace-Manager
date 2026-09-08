@@ -15,9 +15,14 @@ def test_dashboard_returns_summary(client):
     assert "recent_files" in data
 
 
-def test_dashboard_returns_file_counts_and_recent_files(client, test_session):
+def test_dashboard_returns_file_counts_and_recent_files(
+    client,
+    test_session,
+    test_user,
+):
     first_file = create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="sales.csv",
         stored_name="stored_sales.csv",
         extension="csv",
@@ -28,6 +33,7 @@ def test_dashboard_returns_file_counts_and_recent_files(client, test_session):
     )
     second_file = create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="notes.txt",
         stored_name="stored_notes.txt",
         extension="txt",
@@ -48,3 +54,26 @@ def test_dashboard_returns_file_counts_and_recent_files(client, test_session):
     assert data["failed_files"] == 1
     assert data["recent_files"][0]["id"] == second_file.id
     assert data["recent_files"][1]["id"] == first_file.id
+
+
+def test_dashboard_excludes_files_owned_by_another_user(
+    client,
+    test_session,
+    other_user,
+):
+    create_file(
+        session=test_session,
+        user_id=other_user.id,
+        original_name="private.csv",
+        stored_name="private-dashboard.csv",
+        extension="csv",
+        category="spreadsheets",
+        size_bytes=500,
+        storage_path="uploads/private-dashboard.csv",
+        status="organized",
+    )
+
+    response = client.get("/api/dashboard/")
+
+    assert response.status_code == 200
+    assert response.json()["total_files"] == 0
