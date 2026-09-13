@@ -27,7 +27,7 @@ def analysis_data_root(temporary_data_root):
 
 
 @pytest.fixture
-def organized_analysis_csv(test_session, analysis_data_root):
+def organized_analysis_csv(test_session, analysis_data_root, test_user):
     csv_path = analysis_data_root / "organized.csv"
     csv_path.write_text(
         "name,age,city\n"
@@ -39,6 +39,7 @@ def organized_analysis_csv(test_session, analysis_data_root):
 
     return create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="organized.csv",
         stored_name="organized.csv",
         extension="csv",
@@ -271,11 +272,13 @@ def test_get_analyzable_csv_files_returns_only_organized_csv_files(
     test_session,
     analysis_data_root,
     organized_analysis_csv,
+    test_user,
 ):
     uploaded_path = analysis_data_root / "uploaded.csv"
     uploaded_path.write_text("name\nAlice\n", encoding="utf-8")
     create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="uploaded.csv",
         stored_name="uploaded.csv",
         extension="csv",
@@ -289,6 +292,7 @@ def test_get_analyzable_csv_files_returns_only_organized_csv_files(
     workbook_path.write_bytes(b"not a real workbook")
     create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="organized.xlsx",
         stored_name="organized.xlsx",
         extension="xlsx",
@@ -298,7 +302,7 @@ def test_get_analyzable_csv_files_returns_only_organized_csv_files(
         status="organized",
     )
 
-    result = get_analyzable_csv_files(test_session)
+    result = get_analyzable_csv_files(test_session, test_user.id)
 
     assert [file_record.id for file_record in result] == [
         organized_analysis_csv.id
@@ -308,10 +312,12 @@ def test_get_analyzable_csv_files_returns_only_organized_csv_files(
 def test_analyze_file_and_record_job_marks_job_completed(
     test_session,
     organized_analysis_csv,
+    test_user,
 ):
     recorded = analyze_file_and_record_job(
         session=test_session,
         file_id=organized_analysis_csv.id,
+        user_id=test_user.id,
         preview_rows=2,
     )
 
@@ -333,6 +339,7 @@ def test_analyze_file_and_record_job_marks_job_completed(
 def test_analyze_file_and_record_job_marks_job_failed(
     test_session,
     organized_analysis_csv,
+    test_user,
     monkeypatch,
 ):
     def fail_analysis(*args, **kwargs):
@@ -344,6 +351,7 @@ def test_analyze_file_and_record_job_marks_job_failed(
         analyze_file_and_record_job(
             session=test_session,
             file_id=organized_analysis_csv.id,
+            user_id=test_user.id,
         )
 
     job = test_session.scalars(
@@ -360,10 +368,12 @@ def test_analyze_file_and_record_job_marks_job_failed(
 def test_filter_csv_data_supports_numeric_and_text_filters(
     test_session,
     organized_analysis_csv,
+    test_user,
 ):
     numeric_result = filter_csv_data(
         session=test_session,
         file_id=organized_analysis_csv.id,
+        user_id=test_user.id,
         selected_columns=["name", "age"],
         filter_column="age",
         operator="Greater than",
@@ -373,6 +383,7 @@ def test_filter_csv_data_supports_numeric_and_text_filters(
     text_result = filter_csv_data(
         session=test_session,
         file_id=organized_analysis_csv.id,
+        user_id=test_user.id,
         selected_columns=["name", "city"],
         filter_column="name",
         operator="Contains",
@@ -392,11 +403,13 @@ def test_filter_csv_data_supports_numeric_and_text_filters(
 def test_filter_csv_data_rejects_invalid_configuration(
     test_session,
     organized_analysis_csv,
+    test_user,
 ):
     with pytest.raises(CSVAnalysisError, match="at least one column"):
         filter_csv_data(
             session=test_session,
             file_id=organized_analysis_csv.id,
+            user_id=test_user.id,
             selected_columns=[],
         )
 
@@ -404,6 +417,7 @@ def test_filter_csv_data_rejects_invalid_configuration(
         filter_csv_data(
             session=test_session,
             file_id=organized_analysis_csv.id,
+            user_id=test_user.id,
             selected_columns=["age"],
             filter_column="age",
             operator="Equals",

@@ -9,6 +9,7 @@ from backend.routes.cleaning_routes import router as cleaning_router
 from backend.routes.report_routes import router as report_router
 from backend.routes.xlsx_routes import router as xlsx_router
 from backend.routes.settings_routes import router as settings_router
+from backend.routes.auth_routes import router as auth_router
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -40,5 +41,6 @@ app.include_router(cleaning_router)
 app.include_router(report_router)
 app.include_router(xlsx_router)
 app.include_router(settings_router)
+app.include_router(auth_router)
 
 register_exception_handlers(app)

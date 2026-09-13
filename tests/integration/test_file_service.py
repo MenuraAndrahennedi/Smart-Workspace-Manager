@@ -12,6 +12,7 @@ from backend.services.storage_service import initialize_storage
 def test_upload_file_creates_storage_file_and_database_record(
     temporary_data_root,
     test_session,
+    test_user,
 ):
     initialize_storage()
     file_bytes = b"name,age\nMenura,22\n"
@@ -20,6 +21,7 @@ def test_upload_file_creates_storage_file_and_database_record(
         filename="student_data.csv",
         file_bytes=file_bytes,
         session=test_session,
+        user_id=test_user.id,
     )
 
     saved_path = Path(result.saved_path)
@@ -41,11 +43,22 @@ def test_upload_file_creates_storage_file_and_database_record(
 def test_upload_file_allows_same_original_filename_twice(
     temporary_data_root,
     test_session,
+    test_user,
 ):
     initialize_storage()
 
-    first = upload_file("report.csv", b"name,score\nAsha,95\n", test_session)
-    second = upload_file("report.csv", b"name,score\nNimal,88\n", test_session)
+    first = upload_file(
+        "report.csv",
+        b"name,score\nAsha,95\n",
+        test_session,
+        test_user.id,
+    )
+    second = upload_file(
+        "report.csv",
+        b"name,score\nNimal,88\n",
+        test_session,
+        test_user.id,
+    )
 
     records = test_session.scalars(select(FileRecord)).all()
 
@@ -60,6 +73,7 @@ def test_upload_file_allows_same_original_filename_twice(
 def test_upload_file_stores_trimmed_original_filename(
     temporary_data_root,
     test_session,
+    test_user,
 ):
     initialize_storage()
 
@@ -67,6 +81,7 @@ def test_upload_file_stores_trimmed_original_filename(
         "  student_data.csv  ",
         b"name,age\nMenura,22\n",
         test_session,
+        test_user.id,
     )
 
     record = test_session.get(FileRecord, result.file_id)
@@ -78,11 +93,12 @@ def test_upload_file_stores_trimmed_original_filename(
 def test_upload_file_rejects_invalid_extension_without_storage_or_database(
     temporary_data_root,
     test_session,
+    test_user,
 ):
     initialize_storage()
 
     with pytest.raises(ValueError):
-        upload_file("malware.exe", b"bad", test_session)
+        upload_file("malware.exe", b"bad", test_session, test_user.id)
 
     records = test_session.scalars(select(FileRecord)).all()
     saved_files = list((temporary_data_root / "uploads").iterdir())
@@ -95,6 +111,7 @@ def test_upload_file_rejects_invalid_extension_without_storage_or_database(
 def test_upload_file_rejects_empty_and_oversized_uploads(
     temporary_data_root,
     test_session,
+    test_user,
     monkeypatch,
     file_bytes,
 ):
@@ -102,7 +119,7 @@ def test_upload_file_rejects_empty_and_oversized_uploads(
     monkeypatch.setattr(file_service, "MAX_UPLOAD_SIZE_BYTES", 4)
 
     with pytest.raises(ValueError):
-        upload_file("report.csv", file_bytes, test_session)
+        upload_file("report.csv", file_bytes, test_session, test_user.id)
 
     assert test_session.scalars(select(FileRecord)).all() == []
     assert list((temporary_data_root / "uploads").iterdir()) == []
@@ -111,6 +128,7 @@ def test_upload_file_rejects_empty_and_oversized_uploads(
 def test_upload_file_cleans_up_real_saved_file_when_database_create_fails(
     temporary_data_root,
     test_session,
+    test_user,
     monkeypatch,
 ):
     initialize_storage()
@@ -130,7 +148,12 @@ def test_upload_file_cleans_up_real_saved_file_when_database_create_fails(
     monkeypatch.setattr(file_service, "create_file", failing_create_file)
 
     with pytest.raises(RuntimeError, match="Database insert failed"):
-        upload_file("student_data.csv", b"name,age\nMenura,22\n", test_session)
+        upload_file(
+            "student_data.csv",
+            b"name,age\nMenura,22\n",
+            test_session,
+            test_user.id,
+        )
 
     records = test_session.scalars(select(FileRecord)).all()
 

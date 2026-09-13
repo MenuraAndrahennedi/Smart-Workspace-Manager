@@ -19,6 +19,7 @@ from backend.services.xlsx_to_csv_service import (
 def create_workbook_record(
     test_session,
     temporary_data_root,
+    user_id,
     *,
     name="sales.xlsx",
     status="organized",
@@ -44,6 +45,7 @@ def create_workbook_record(
 
     record = create_file(
         session=test_session,
+        user_id=user_id,
         original_name=name,
         stored_name=f"stored_{name}",
         extension="xlsx",
@@ -58,20 +60,24 @@ def create_workbook_record(
 def test_get_convertible_xlsx_files_returns_only_organized_workbooks(
     test_session,
     temporary_data_root,
+    test_user,
 ):
     organized, _ = create_workbook_record(
         test_session,
         temporary_data_root,
+        test_user.id,
         name="organized.xlsx",
     )
     create_workbook_record(
         test_session,
         temporary_data_root,
+        test_user.id,
         name="failed.xlsx",
         status="failed",
     )
     create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="data.csv",
         stored_name="stored_data.csv",
         extension="csv",
@@ -81,20 +87,23 @@ def test_get_convertible_xlsx_files_returns_only_organized_workbooks(
         status="organized",
     )
 
-    assert get_convertible_xlsx_files(test_session) == [organized]
+    assert get_convertible_xlsx_files(test_session, test_user.id) == [organized]
 
 
 def test_get_organized_xlsx_record_rejects_missing_wrong_type_and_status(
     test_session,
     temporary_data_root,
+    test_user,
 ):
     failed, _ = create_workbook_record(
         test_session,
         temporary_data_root,
+        test_user.id,
         status="failed",
     )
     csv_record = create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="data.csv",
         stored_name="stored_data.csv",
         extension="csv",
@@ -104,25 +113,35 @@ def test_get_organized_xlsx_record_rejects_missing_wrong_type_and_status(
         status="organized",
     )
 
-    with pytest.raises(XLSXConversionError, match="does not exist"):
-        get_organized_xlsx_record(test_session, 9999)
+    with pytest.raises(FileNotFoundError, match="was not found"):
+        get_organized_xlsx_record(test_session, 9999, test_user.id)
     with pytest.raises(XLSXConversionError, match="must be an XLSX"):
-        get_organized_xlsx_record(test_session, csv_record.id)
+        get_organized_xlsx_record(test_session, csv_record.id, test_user.id)
     with pytest.raises(XLSXConversionError, match="must be organized"):
-        get_organized_xlsx_record(test_session, failed.id)
+        get_organized_xlsx_record(test_session, failed.id, test_user.id)
 
 
 def test_get_sheet_names_and_preview_returns_selected_sheet_data(
     test_session,
     temporary_data_root,
+    test_user,
 ):
-    workbook, _ = create_workbook_record(test_session, temporary_data_root)
+    workbook, _ = create_workbook_record(
+        test_session,
+        temporary_data_root,
+        test_user.id,
+    )
 
-    assert get_xlsx_sheet_names(test_session, workbook.id) == ["Sales", "Targets"]
+    assert get_xlsx_sheet_names(
+        test_session,
+        workbook.id,
+        test_user.id,
+    ) == ["Sales", "Targets"]
 
     preview = preview_xlsx_sheet(
         test_session,
         workbook.id,
+        test_user.id,
         "Sales",
         preview_rows=1,
     )
@@ -138,24 +157,37 @@ def test_get_sheet_names_and_preview_returns_selected_sheet_data(
 def test_preview_rejects_invalid_sheet_and_preview_count(
     test_session,
     temporary_data_root,
+    test_user,
 ):
-    workbook, _ = create_workbook_record(test_session, temporary_data_root)
+    workbook, _ = create_workbook_record(
+        test_session,
+        temporary_data_root,
+        test_user.id,
+    )
 
     with pytest.raises(XLSXConversionError, match="does not exist"):
-        preview_xlsx_sheet(test_session, workbook.id, "Missing")
+        preview_xlsx_sheet(test_session, workbook.id, test_user.id, "Missing")
     with pytest.raises(XLSXConversionError, match="greater than zero"):
-        preview_xlsx_sheet(test_session, workbook.id, "Sales", preview_rows=0)
+        preview_xlsx_sheet(
+            test_session,
+            workbook.id,
+            test_user.id,
+            "Sales",
+            preview_rows=0,
+        )
 
 
 def test_preview_rejects_unreadable_and_empty_workbooks(
     test_session,
     temporary_data_root,
+    test_user,
 ):
     bad_path = temporary_data_root / "processed" / "spreadsheets" / "bad.xlsx"
     bad_path.parent.mkdir(parents=True, exist_ok=True)
     bad_path.write_bytes(b"not an xlsx workbook")
     bad_record = create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="bad.xlsx",
         stored_name="stored_bad.xlsx",
         extension="xlsx",
@@ -167,22 +199,30 @@ def test_preview_rejects_unreadable_and_empty_workbooks(
     empty_record, _ = create_workbook_record(
         test_session,
         temporary_data_root,
+        test_user.id,
         name="empty.xlsx",
         sheets={"Empty": pd.DataFrame()},
     )
 
     with pytest.raises(XLSXConversionError, match="not a readable XLSX"):
-        get_xlsx_sheet_names(test_session, bad_record.id)
+        get_xlsx_sheet_names(test_session, bad_record.id, test_user.id)
     with pytest.raises(XLSXConversionError, match="does not contain any columns"):
-        preview_xlsx_sheet(test_session, empty_record.id, "Empty")
+        preview_xlsx_sheet(
+            test_session,
+            empty_record.id,
+            test_user.id,
+            "Empty",
+        )
 
 
 def test_sheet_lookup_rejects_missing_managed_workbook(
     test_session,
     temporary_data_root,
+    test_user,
 ):
     missing_record = create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="missing.xlsx",
         stored_name="stored_missing.xlsx",
         extension="xlsx",
@@ -193,17 +233,19 @@ def test_sheet_lookup_rejects_missing_managed_workbook(
     )
 
     with pytest.raises(XLSXConversionError, match="unavailable in managed storage"):
-        get_xlsx_sheet_names(test_session, missing_record.id)
+        get_xlsx_sheet_names(test_session, missing_record.id, test_user.id)
 
 
 def test_sheet_lookup_enforces_workbook_size_limit(
     test_session,
     temporary_data_root,
+    test_user,
     monkeypatch,
 ):
     workbook, workbook_path = create_workbook_record(
         test_session,
         temporary_data_root,
+        test_user.id,
     )
     monkeypatch.setattr(
         "backend.config.settings.MAX_UPLOAD_SIZE_BYTES",
@@ -211,39 +253,47 @@ def test_sheet_lookup_enforces_workbook_size_limit(
     )
 
     with pytest.raises(XLSXConversionError, match="conversion limit"):
-        get_xlsx_sheet_names(test_session, workbook.id)
+        get_xlsx_sheet_names(test_session, workbook.id, test_user.id)
 
 
 def test_preview_enforces_row_and_column_limits(
     test_session,
     temporary_data_root,
+    test_user,
     monkeypatch,
 ):
-    workbook, _ = create_workbook_record(test_session, temporary_data_root)
+    workbook, _ = create_workbook_record(
+        test_session,
+        temporary_data_root,
+        test_user.id,
+    )
 
     monkeypatch.setattr("backend.config.settings.MAX_CSV_ROWS", 1)
     with pytest.raises(XLSXConversionError, match="row conversion limit"):
-        preview_xlsx_sheet(test_session, workbook.id, "Sales")
+        preview_xlsx_sheet(test_session, workbook.id, test_user.id, "Sales")
 
     monkeypatch.setattr("backend.config.settings.MAX_CSV_ROWS", 10)
     monkeypatch.setattr("backend.config.settings.MAX_CSV_COLUMNS", 1)
     with pytest.raises(XLSXConversionError, match="column conversion limit"):
-        preview_xlsx_sheet(test_session, workbook.id, "Sales")
+        preview_xlsx_sheet(test_session, workbook.id, test_user.id, "Sales")
 
 
 def test_convert_xlsx_to_csv_saves_managed_csv_and_preserves_source(
     test_session,
     temporary_data_root,
+    test_user,
 ):
     workbook, workbook_path = create_workbook_record(
         test_session,
         temporary_data_root,
+        test_user.id,
     )
     original_bytes = workbook_path.read_bytes()
 
     result = convert_xlsx_to_csv(
         test_session,
         workbook.id,
+        test_user.id,
         "Sales",
         date_value=datetime(2026, 8, 2),
     )
@@ -262,7 +312,7 @@ def test_convert_xlsx_to_csv_saves_managed_csv_and_preserves_source(
     ]
     assert workbook_path.read_bytes() == original_bytes
 
-    converted_record = get_file_by_id(test_session, result.file_id)
+    converted_record = get_file_by_id(test_session, result.file_id, test_user.id)
     assert converted_record.original_name == "sales_Sales.csv"
     assert converted_record.stored_name == result.csv_filename
     assert converted_record.extension == "csv"
@@ -275,11 +325,16 @@ def test_convert_xlsx_to_csv_saves_managed_csv_and_preserves_source(
 def test_repeated_conversions_create_unique_files(
     test_session,
     temporary_data_root,
+    test_user,
 ):
-    workbook, _ = create_workbook_record(test_session, temporary_data_root)
+    workbook, _ = create_workbook_record(
+        test_session,
+        temporary_data_root,
+        test_user.id,
+    )
 
-    first = convert_xlsx_to_csv(test_session, workbook.id, "Sales")
-    second = convert_xlsx_to_csv(test_session, workbook.id, "Sales")
+    first = convert_xlsx_to_csv(test_session, workbook.id, test_user.id, "Sales")
+    second = convert_xlsx_to_csv(test_session, workbook.id, test_user.id, "Sales")
 
     assert first.file_id != second.file_id
     assert first.csv_filename != second.csv_filename
@@ -291,9 +346,14 @@ def test_repeated_conversions_create_unique_files(
 def test_conversion_write_failure_removes_partial_output(
     test_session,
     temporary_data_root,
+    test_user,
     monkeypatch,
 ):
-    workbook, _ = create_workbook_record(test_session, temporary_data_root)
+    workbook, _ = create_workbook_record(
+        test_session,
+        temporary_data_root,
+        test_user.id,
+    )
 
     def fail_write(dataframe, path, **kwargs):
         Path(path).write_bytes(b"partial")
@@ -302,7 +362,7 @@ def test_conversion_write_failure_removes_partial_output(
     monkeypatch.setattr(pd.DataFrame, "to_csv", fail_write)
 
     with pytest.raises(OSError, match="write failed"):
-        convert_xlsx_to_csv(test_session, workbook.id, "Sales")
+        convert_xlsx_to_csv(test_session, workbook.id, test_user.id, "Sales")
 
     generated_csv_files = list(
         temporary_data_root.glob("processed/spreadsheets/*/*/*.csv")
@@ -313,9 +373,14 @@ def test_conversion_write_failure_removes_partial_output(
 def test_database_failure_removes_generated_csv(
     test_session,
     temporary_data_root,
+    test_user,
     monkeypatch,
 ):
-    workbook, _ = create_workbook_record(test_session, temporary_data_root)
+    workbook, _ = create_workbook_record(
+        test_session,
+        temporary_data_root,
+        test_user.id,
+    )
 
     def fail_create_file(**kwargs):
         raise RuntimeError("database failed")
@@ -326,7 +391,7 @@ def test_database_failure_removes_generated_csv(
     )
 
     with pytest.raises(RuntimeError, match="database failed"):
-        convert_xlsx_to_csv(test_session, workbook.id, "Sales")
+        convert_xlsx_to_csv(test_session, workbook.id, test_user.id, "Sales")
 
     assert list(temporary_data_root.glob("processed/spreadsheets/*/*/*.csv")) == []
 

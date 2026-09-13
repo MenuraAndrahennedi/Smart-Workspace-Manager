@@ -35,6 +35,7 @@ def enable_sqlite_foreign_keys(engine: Engine) -> None:
 engine = create_engine(
     DATABASE_URL,
     echo=False,
+    pool_pre_ping=True,
 )
 enable_sqlite_foreign_keys(engine)
 
@@ -98,4 +99,4 @@ def _finalize_pending_file_deletions(session: Session) -> None:
 
 def initialize_database() -> None:
     from backend.database import models
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine) # metadata contains the definitions of models

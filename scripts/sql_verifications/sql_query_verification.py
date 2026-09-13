@@ -26,8 +26,8 @@ def seed_query_data(connection: Connection) -> None:
     connection.execute(
         text(
             """
-            INSERT INTO users (id, email, password_hash)
-            VALUES (:id, :email, :password_hash)
+            INSERT INTO users (id, email, password_hash, created_at)
+            VALUES (:id, :email, :password_hash, CURRENT_TIMESTAMP)
             """
         ),
         {

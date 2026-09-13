@@ -10,9 +10,10 @@ from backend.services import automation_service
 from backend.services.automation_service import organize_uploaded_file
 
 
-def create_uploaded_record(test_session, source: Path):
+def create_uploaded_record(test_session, source: Path, user_id: int):
     return create_file(
         session=test_session,
+        user_id=user_id,
         original_name=source.name,
         stored_name=source.name,
         extension=source.suffix.lstrip("."),
@@ -32,18 +33,20 @@ def get_automation_logs(test_session) -> list[AutomationLog]:
 def test_organizer_moves_file_and_updates_database_successfully(
     temporary_data_root,
     test_session,
+    test_user,
     monkeypatch,
 ):
     source = temporary_data_root / "uploads" / "report.csv"
     source.parent.mkdir(parents=True)
     source.write_text("name,score\nMenura,90")
-    file_record = create_uploaded_record(test_session, source)
+    file_record = create_uploaded_record(test_session, source, test_user.id)
     fixed_date = datetime(2026, 8, 1, tzinfo=timezone.utc)
     monkeypatch.setattr(automation_service, "time_now", lambda: fixed_date)
 
     result = organize_uploaded_file(
         session=test_session,
         file_id=file_record.id,
+        user_id=test_user.id,
         source_path=source,
     )
 
@@ -55,7 +58,7 @@ def test_organizer_moves_file_and_updates_database_successfully(
         / "08"
         / "report.csv"
     )
-    updated_record = get_file_by_id(test_session, file_record.id)
+    updated_record = get_file_by_id(test_session, file_record.id, test_user.id)
 
     assert result.destination_path == expected_path
     assert result.category == "spreadsheets"
@@ -72,12 +75,13 @@ def test_organizer_moves_file_and_updates_database_successfully(
 def test_organizer_restores_file_when_database_update_fails(
     temporary_data_root,
     test_session,
+    test_user,
     monkeypatch,
 ):
     source = temporary_data_root / "uploads" / "report.csv"
     source.parent.mkdir(parents=True)
     source.write_text("sample data")
-    file_record = create_uploaded_record(test_session, source)
+    file_record = create_uploaded_record(test_session, source, test_user.id)
 
     destination_dir = (
         temporary_data_root
@@ -109,10 +113,11 @@ def test_organizer_restores_file_when_database_update_fails(
         organize_uploaded_file(
             session=test_session,
             file_id=file_record.id,
+            user_id=test_user.id,
             source_path=source,
         )
 
-    failed_record = get_file_by_id(test_session, file_record.id)
+    failed_record = get_file_by_id(test_session, file_record.id, test_user.id)
     assert failed_record is not None
     assert failed_record.storage_path == str(source)
     assert failed_record.category == "spreadsheets"
@@ -129,6 +134,7 @@ def test_organizer_restores_file_when_database_update_fails(
 def test_organizer_restores_file_and_logs_invalid_id(
     temporary_data_root,
     test_session,
+    test_user,
     monkeypatch,
 ):
     source = temporary_data_root / "uploads" / "report.csv"
@@ -152,11 +158,12 @@ def test_organizer_restores_file_and_logs_invalid_id(
 
     with pytest.raises(
         FileNotFoundError,
-        match="File record with ID 999 was not found",
+        match="File with ID 999 was not found",
     ):
         organize_uploaded_file(
             session=test_session,
             file_id=999,
+            user_id=test_user.id,
             source_path=source,
         )
 
@@ -167,18 +174,19 @@ def test_organizer_restores_file_and_logs_invalid_id(
     assert len(logs) == 1
     assert logs[0].target == "file:999:report.csv"
     assert logs[0].status == "failed"
-    assert "File record with ID 999 was not found" in logs[0].message
+    assert "File with ID 999 was not found" in logs[0].message
 
 
 def test_organizer_logs_duplicate_destination_failure(
     temporary_data_root,
     test_session,
+    test_user,
     monkeypatch,
 ):
     source = temporary_data_root / "uploads" / "report.csv"
     source.parent.mkdir(parents=True)
     source.write_text("new content")
-    file_record = create_uploaded_record(test_session, source)
+    file_record = create_uploaded_record(test_session, source, test_user.id)
 
     destination_dir = (
         temporary_data_root
@@ -201,10 +209,11 @@ def test_organizer_logs_duplicate_destination_failure(
         organize_uploaded_file(
             session=test_session,
             file_id=file_record.id,
+            user_id=test_user.id,
             source_path=source,
         )
 
-    failed_record = get_file_by_id(test_session, file_record.id)
+    failed_record = get_file_by_id(test_session, file_record.id, test_user.id)
     assert failed_record is not None
     assert failed_record.storage_path == str(source)
     assert failed_record.status == "failed"
@@ -221,12 +230,13 @@ def test_organizer_logs_duplicate_destination_failure(
 def test_success_log_failure_rolls_back_location_before_failed_state_is_saved(
     temporary_data_root,
     test_session,
+    test_user,
     monkeypatch,
 ):
     source = temporary_data_root / "uploads" / "report.csv"
     source.parent.mkdir(parents=True)
     source.write_text("sample data")
-    file_record = create_uploaded_record(test_session, source)
+    file_record = create_uploaded_record(test_session, source, test_user.id)
 
     destination_dir = (
         temporary_data_root
@@ -258,10 +268,11 @@ def test_success_log_failure_rolls_back_location_before_failed_state_is_saved(
         organize_uploaded_file(
             session=test_session,
             file_id=file_record.id,
+            user_id=test_user.id,
             source_path=source,
         )
 
-    failed_record = get_file_by_id(test_session, file_record.id)
+    failed_record = get_file_by_id(test_session, file_record.id, test_user.id)
     assert failed_record is not None
     assert failed_record.storage_path == str(source)
     assert failed_record.category == "spreadsheets"

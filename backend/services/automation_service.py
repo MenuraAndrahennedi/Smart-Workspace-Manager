@@ -104,14 +104,19 @@ def organize_uploaded_file(
 
         try:
             with session.begin_nested():
-                update_file_location(
-                    session=session,
-                    file_id=file_id,
-                    user_id=user_id,
-                    new_path=failure_path,
-                    category=file_category,
-                    status="failed",
-                )
+                try:
+                    update_file_location(
+                        session=session,
+                        file_id=file_id,
+                        user_id=user_id,
+                        new_path=failure_path,
+                        category=file_category,
+                        status="failed",
+                    )
+                except FileNotFoundError:
+                    # There is no file row to mark as failed, but the failed
+                    # organization attempt should still have an audit entry.
+                    pass
                 create_automation_log(
                     session=session,
                     action="organize_file",

@@ -4,7 +4,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.config.settings import time_now
-from backend.database.models import AnalysisJob, AutomationLog, FileRecord, Report
+from backend.database.models import AnalysisJob, AutomationLog, FileRecord, Report, User
 
 class ResourceForbiddenError(Exception):
     pass
@@ -256,7 +256,12 @@ def get_report_storage_paths(
     return [
         Path(storage_path)
         for storage_path in session.scalars(
-            select(Report.storage_path).where(Report.file_id == file_id)
+            select(Report.storage_path)
+            .join(FileRecord)
+            .where(
+                Report.file_id == file_id,
+                FileRecord.user_id == user_id,
+            )
         ).all()
     ]
 
@@ -454,7 +459,11 @@ def get_reports_by_file_id(
     get_file_by_id(session, file_id, user_id)
     return session.scalars(
         select(Report)
-        .where(Report.file_id == file_id)
+        .join(FileRecord)
+        .where(
+            Report.file_id == file_id,
+            FileRecord.user_id == user_id,
+        )
         .order_by(
             Report.created_at.desc(),
             Report.id.desc(),
@@ -500,3 +509,34 @@ def update_report(
     session.flush()
 
     return report
+
+
+def get_user_by_email(
+        session: Session,
+        email: str,
+) -> User | None:
+    return session.scalar(
+        select(User).where(User.email == email)
+    )
+
+def get_user_by_id(
+    session: Session,
+    user_id: int,
+) -> User | None:
+    return session.get(User, user_id)
+
+
+def create_user(
+        session: Session,
+        email: str,
+        password_hash: str,
+) -> User:
+    user = User(
+        email=email,
+        password_hash=password_hash,
+    )
+    session.add(user)
+    session.flush()
+    session.refresh(user)
+
+    return user

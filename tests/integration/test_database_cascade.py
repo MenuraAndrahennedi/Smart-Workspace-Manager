@@ -8,7 +8,7 @@ from backend.database.db import (
     _finalize_pending_file_deletions,
     _restore_pending_file_deletions,
 )
-from backend.database.models import AnalysisJob, FileRecord, Report
+from backend.database.models import AnalysisJob, FileRecord, Report, User
 from backend.database.repositories import create_file
 from backend.services.file_service import delete_actual_file
 
@@ -50,8 +50,15 @@ def test_db_session_rolls_back_and_closes_after_failure(
 
     with pytest.raises(RuntimeError, match="force rollback"):
         with database_db.get_db_session() as session:
+            user = User(
+                email="rollback@example.com",
+                password_hash="verification-only",
+            )
+            session.add(user)
+            session.flush()
             create_file(
                 session=session,
+                user_id=user.id,
                 original_name="rollback.csv",
                 stored_name="rollback.csv",
                 extension="csv",
@@ -71,6 +78,7 @@ def test_db_session_rolls_back_and_closes_after_failure(
 def test_delete_actual_file_cascades_analysis_jobs_and_reports(
     temporary_data_root,
     test_session,
+    test_user,
 ) -> None:
     stored_file = temporary_data_root / "uploads" / "sales.csv"
     stored_file.parent.mkdir(parents=True)
@@ -78,6 +86,7 @@ def test_delete_actual_file_cascades_analysis_jobs_and_reports(
 
     file_record = create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="sales.csv",
         stored_name="stored_sales.csv",
         extension="csv",
@@ -110,6 +119,7 @@ def test_delete_actual_file_cascades_analysis_jobs_and_reports(
     result = delete_actual_file(
         session=test_session,
         file_id=file_record.id,
+        user_id=test_user.id,
     )
 
     assert result["database_deleted"] is True
@@ -135,6 +145,7 @@ def test_delete_actual_file_cascades_analysis_jobs_and_reports(
 def test_delete_actual_file_restores_files_and_records_after_rollback(
     temporary_data_root,
     test_session,
+    test_user,
 ) -> None:
     stored_file = temporary_data_root / "uploads" / "sales.csv"
     stored_file.parent.mkdir(parents=True)
@@ -145,6 +156,7 @@ def test_delete_actual_file_restores_files_and_records_after_rollback(
 
     file_record = create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="sales.csv",
         stored_name="stored_sales.csv",
         extension="csv",
@@ -166,7 +178,7 @@ def test_delete_actual_file_restores_files_and_records_after_rollback(
     )
     test_session.commit()
 
-    delete_actual_file(test_session, file_record.id)
+    delete_actual_file(test_session, file_record.id, test_user.id)
     test_session.rollback()
     _restore_pending_file_deletions(test_session)
 
@@ -196,8 +208,15 @@ def test_db_session_context_finalizes_staged_deletion_after_commit(
     stored_file.write_text("name,score\nMenura,90")
 
     with testing_session() as seed_session:
+        user = User(
+            email="finalize@example.com",
+            password_hash="verification-only",
+        )
+        seed_session.add(user)
+        seed_session.flush()
         file_record = create_file(
             session=seed_session,
+            user_id=user.id,
             original_name="sales.csv",
             stored_name="stored_sales.csv",
             extension="csv",
@@ -207,12 +226,13 @@ def test_db_session_context_finalizes_staged_deletion_after_commit(
             status="organized",
         )
         file_id = file_record.id
+        user_id = user.id
         seed_session.commit()
 
     monkeypatch.setattr(database_db, "SessionLocal", testing_session)
 
     with database_db.get_db_session() as session:
-        delete_actual_file(session, file_id)
+        delete_actual_file(session, file_id, user_id)
         assert not stored_file.exists()
         assert (temporary_data_root / ".trash").is_dir()
 
