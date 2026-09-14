@@ -509,6 +509,113 @@ select:focus {
 .danger-button:hover:not(:disabled) {
   background: #333;
 }
+.chart-preview {
+  width: 100%;
+  min-height: 420px;
+}
+.section-stack {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+.inline-form {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 10px;
+}
+.inline-form:has(input[type="number"]) {
+  grid-template-columns: minmax(240px, 1fr) 120px auto;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  padding: 14px;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+}
+.checkbox-grid label,
+.check-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.checkbox-grid input,
+.check-option input {
+  width: 16px;
+  min-height: auto;
+  height: 16px;
+}
+.data-metrics {
+  margin-top: 20px;
+}
+.analysis-details {
+  margin-bottom: 20px;
+}
+.section-heading,
+.result-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.section-heading .muted {
+  margin: 6px 0 0;
+}
+.result-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.report-chart-list {
+  display: grid;
+  gap: 16px;
+}
+.report-chart-card {
+  padding: 18px;
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+  background: #fafafa;
+}
+.report-chart-card .chart-preview {
+  min-height: 360px;
+  margin-top: 12px;
+}
+.chart-editor {
+  border-color: #cfcfcf;
+}
+.report-generation-actions {
+  display: flex;
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+.selected-workbook,
+.converted-file-details {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  background: #fafafa;
+}
+.selected-workbook > span,
+.converted-file-details > span {
+  color: #737373;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+.conversion-result {
+  margin-top: 20px;
+}
+.button-link {
+  text-decoration: none;
+}
 @media (max-width: 980px) {
   .metric-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -521,6 +628,9 @@ select:focus {
   }
   .filter-bar input {
     grid-column: 1 / -1;
+  }
+  .form-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
 @media (max-width: 560px) {
@@ -542,5 +652,14 @@ select:focus {
   }
   .selected-file .button {
     grid-column: 1 / -1;
+  }
+  .inline-form,
+  .inline-form:has(input[type="number"]),
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .section-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

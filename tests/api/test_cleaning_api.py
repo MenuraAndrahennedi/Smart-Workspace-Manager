@@ -51,3 +51,28 @@ def test_cleaning_rejects_unknown_duplicate_column(client, uploaded_csv):
 
     assert response.status_code == 400
     assert response.json()["error"] == "Bad Request"
+
+
+def test_cleaning_preview_returns_json_safe_missing_values(client):
+    upload_response = client.post(
+        "/api/files/upload",
+        files={
+            "file": (
+                "clean-missing.csv",
+                b"name,score\nAsha,\n,95\n",
+                "text/csv",
+            )
+        },
+    )
+    file_id = upload_response.json()["id"]
+
+    response = client.post(
+        f"/api/cleaning/{file_id}",
+        json={},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["cleaned_dataframe"] == [
+        {"name": "Asha", "score": None},
+        {"name": None, "score": 95.0},
+    ]

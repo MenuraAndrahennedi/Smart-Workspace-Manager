@@ -1,4 +1,5 @@
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -8,9 +9,16 @@ from backend.database.models import User
 from backend.database.repositories import get_analysis_job_by_id
 from backend.dependencies.auth_dependency import require_authenticated_user
 from backend.dependencies.database_dependency import get_db
-from backend.schemas.analysis_schema import AnalysisJobResponse, AnalysisResponse
+from backend.schemas.analysis_schema import (
+    AnalysisJobResponse,
+    AnalysisResponse,
+    ChartConfigurationRequest,
+    ChartPreviewResponse,
+)
 from backend.schemas.file_schema import FileResponse
 from backend.services.analysis_service import analyze_file_and_record_job, filter_csv_data, get_analyzable_csv_files
+from backend.services.visualization_service import ChartConfiguration, generate_chart_for_file
+from backend.utils.dataframe_utils import dataframe_to_records
 
 
 router = APIRouter(
@@ -73,5 +81,27 @@ def get_filtered_data(
         maximum_result_rows=maximum_result_rows,
     )
 
-    return filtered_data.to_dict(orient="records")
+    return dataframe_to_records(filtered_data)
+
+
+@router.post("/files/{file_id}/chart", response_model=ChartPreviewResponse)
+def create_chart_preview(
+    file_id: int,
+    request: ChartConfigurationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_authenticated_user),
+):
+    configuration = ChartConfiguration(**request.model_dump())
+    generated_chart = generate_chart_for_file(
+        session=db,
+        file_id=file_id,
+        user_id=current_user.id,
+        configuration=configuration,
+    )
+
+    return {
+        "configuration": request.model_dump(),
+        "figure": json.loads(generated_chart.figure.to_json()),
+        "plotted_row_count": generated_chart.plotted_row_count,
+    }
 

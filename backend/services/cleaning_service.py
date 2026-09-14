@@ -13,6 +13,7 @@ from backend.services.analysis_service import (
     load_organized_csv,
 )
 from backend.utils.file_utils import ensure_dated_directory, generate_safe_filename
+from backend.utils.dataframe_utils import dataframe_to_records
 from backend.utils.time_utils import time_now
 
 
@@ -62,7 +63,7 @@ class CleaningPreviewResult:
 
     def to_api_response(self) -> dict:
         return {
-            "cleaned_dataframe": self.cleaned_dataframe.to_dict(orient="records"),
+            "cleaned_dataframe": dataframe_to_records(self.cleaned_dataframe),
             "original_row_count": self.original_row_count,
             "cleaned_row_count": self.cleaned_row_count,
             "duplicates_removed": self.duplicates_removed,

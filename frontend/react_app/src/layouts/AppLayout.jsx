@@ -17,6 +17,10 @@ function AppLayout() {
           <NavLink to="/dashboard">Dashboard</NavLink>
           <NavLink to="/upload">Upload</NavLink>
           <NavLink to="/library">Library</NavLink>
+          <NavLink to="/xlsx-to-csv">XLSX to CSV</NavLink>
+          <NavLink to="/analyzer">Analyzer</NavLink>
+          <NavLink to="/cleaning">Cleaning</NavLink>
+          <NavLink to="/reports">Reports</NavLink>
         </nav>
 
         <div className="sidebar-user">

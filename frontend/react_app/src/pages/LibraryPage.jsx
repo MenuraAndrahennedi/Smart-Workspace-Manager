@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient, getErrorMessage } from "../api/client";
+import { downloadAuthenticatedFile } from "../api/download";
 import FileName from "../components/FileName";
 import { formatBytes, formatDate } from "../utils/formatters";
 
@@ -52,17 +53,10 @@ function LibraryPage() {
     setErrorMessage("");
 
     try {
-      const response = await apiClient.get(`/api/files/${file.id}/download`, {
-        responseType: "blob",
-      });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = file.original_name;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      await downloadAuthenticatedFile(
+        `/api/files/${file.id}/download`,
+        file.original_name,
+      );
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Could not download the file."));
     } finally {

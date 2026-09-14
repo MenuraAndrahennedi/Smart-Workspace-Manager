@@ -49,6 +49,77 @@ def test_filter_csv_uses_repeated_query_parameters(client, uploaded_csv):
     ]
 
 
+def test_analysis_and_filter_return_json_safe_missing_values(client):
+    upload_response = client.post(
+        "/api/files/upload",
+        files={
+            "file": (
+                "missing-values.csv",
+                b"name,score\nAsha,\n,95\n",
+                "text/csv",
+            )
+        },
+    )
+    file_id = upload_response.json()["id"]
+
+    analysis_response = client.post(
+        f"/api/analyzer/analysis/{file_id}",
+        params={"preview_rows": 2},
+    )
+    filter_response = client.get(
+        f"/api/analyzer/files/{file_id}/filter",
+        params=[
+            ("selected_columns", "name"),
+            ("selected_columns", "score"),
+        ],
+    )
+
+    assert analysis_response.status_code == 201
+    assert analysis_response.json()["result"]["preview"] == [
+        {"name": "Asha", "score": None},
+        {"name": None, "score": 95.0},
+    ]
+    assert filter_response.status_code == 200
+    assert filter_response.json() == [
+        {"name": "Asha", "score": None},
+        {"name": None, "score": 95.0},
+    ]
+
+
+def test_create_chart_preview_returns_plotly_figure(client, uploaded_csv):
+    response = client.post(
+        f"/api/analyzer/files/{uploaded_csv['id']}/chart",
+        json={
+            "chart_type": "histogram",
+            "title": "Score distribution",
+            "x_column": "score",
+            "histogram_bins": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["configuration"]["chart_type"] == "histogram"
+    assert data["plotted_row_count"] == 3
+    assert data["figure"]["data"][0]["type"] == "histogram"
+    assert "layout" in data["figure"]
+
+
+def test_chart_preview_rejects_invalid_configuration(client, uploaded_csv):
+    response = client.post(
+        f"/api/analyzer/files/{uploaded_csv['id']}/chart",
+        json={
+            "chart_type": "scatter",
+            "title": "Invalid scatter",
+            "x_column": "score",
+            "y_column": "score",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "Bad Request"
+
+
 def test_analysis_rejects_invalid_preview_count(client, uploaded_csv):
     response = client.post(
         f"/api/analyzer/analysis/{uploaded_csv['id']}",

@@ -27,9 +27,10 @@ apiClient.interceptors.response.use(
 );
 
 export function getErrorMessage(error, fallbackMessage) {
-  return (
-    error.response?.data?.message ||
-    error.response?.data?.detail ||
-    fallbackMessage
-  );
+  const serverMessage = error.response?.data?.message || error.response?.data?.detail;
+
+  if (serverMessage) return serverMessage;
+  if (error.response?.status === 401) return "Your session has expired. Please sign in again.";
+  if (error.response?.status === 403) return "You do not have permission to access this resource.";
+  return fallbackMessage;
 }

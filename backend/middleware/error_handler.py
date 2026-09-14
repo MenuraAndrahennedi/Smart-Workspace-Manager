@@ -8,6 +8,7 @@ from backend.services.file_service import UploadValidationError
 from backend.services.cleaning_service import DataCleaningError
 from backend.services.report_service import ReportGenerationError
 from backend.services.xlsx_to_csv_service import XLSXConversionError
+from backend.services.visualization_service import VisualizationError
 from backend.database.repositories import ResourceForbiddenError
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,19 @@ def register_exception_handlers(app: FastAPI):
     async def report_generation_error_handler(
         request: Request,
         exc: ReportGenerationError,
+    ):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "Bad Request",
+                "message": str(exc),
+            },
+        )
+
+    @app.exception_handler(VisualizationError)
+    async def visualization_error_handler(
+        request: Request,
+        exc: VisualizationError,
     ):
         return JSONResponse(
             status_code=400,

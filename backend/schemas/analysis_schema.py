@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -17,6 +18,21 @@ class AnalysisResult(BaseModel):
 class AnalysisResponse(BaseModel):
     job_id: int
     result: AnalysisResult
+
+
+class ChartConfigurationRequest(BaseModel):
+    chart_type: str
+    title: str
+    x_column: str | None = None
+    y_column: str | None = None
+    aggregation: str | None = None
+    histogram_bins: int | None = None
+
+
+class ChartPreviewResponse(BaseModel):
+    configuration: ChartConfigurationRequest
+    figure: dict[str, Any]
+    plotted_row_count: int
 
 
 from pydantic import BaseModel, ConfigDict

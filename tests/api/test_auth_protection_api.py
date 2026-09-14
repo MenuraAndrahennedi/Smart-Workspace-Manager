@@ -16,6 +16,17 @@ PROTECTED_REQUESTS = [
     ("post", "/api/analyzer/analysis/1", {}),
     ("get", "/api/analyzer/analysis_job/1", {}),
     (
+        "post",
+        "/api/analyzer/files/1/chart",
+        {
+            "json": {
+                "chart_type": "histogram",
+                "title": "Scores",
+                "x_column": "score",
+            }
+        },
+    ),
+    (
         "get",
         "/api/analyzer/files/1/filter",
         {"params": {"selected_columns": "value"}},

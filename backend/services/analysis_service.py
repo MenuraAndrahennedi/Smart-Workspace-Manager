@@ -14,6 +14,7 @@ from backend.database.models import FileRecord
 from backend.database.repositories import query_files, get_file_by_id, create_analysis_job, update_analysis_job
 from backend.utils.validators import validate_file_extension
 from backend.services.storage_service import resolve_managed_path
+from backend.utils.dataframe_utils import dataframe_to_records
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +47,15 @@ class RecordedCSVAnalysis:
         return {
             "job_id": self.job_id,
             "result": {
-                "preview": self.result.preview.to_dict(orient="records"),
+                "preview": dataframe_to_records(self.result.preview),
                 "row_count": self.result.row_count,
                 "column_count": self.result.column_count,
                 "columns": self.result.columns,
                 "data_types": self.result.data_types,
                 "missing_values": self.result.missing_values,
                 "duplicate_count": self.result.duplicate_count,
-                "descriptive_statistics": self.result.descriptive_statistics.reset_index().to_dict(
-                    orient="records"
+                "descriptive_statistics": dataframe_to_records(
+                    self.result.descriptive_statistics.reset_index()
                 ),
             },
         }
