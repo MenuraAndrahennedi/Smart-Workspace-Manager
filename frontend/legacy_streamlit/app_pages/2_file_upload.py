@@ -9,7 +9,10 @@ from backend.database.db import get_db_session
 from backend.utils.constants import FILE_TYPE_GROUPS
 from backend.utils.file_utils import format_file_size
 from backend.config.settings import MAX_UPLOAD_SIZE_MB
-from frontend.ui_helpers import commit_session_changes
+from frontend.legacy_streamlit.ui_helpers import (
+    commit_session_changes,
+    require_legacy_user_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +21,9 @@ def clear_latest_upload_details() -> None:
     st.session_state.pop("latest_upload_details", None)
 
 
-st.set_page_config(
-    page_title="File Upload", 
-    page_icon="SWM", 
-    layout="wide"
-)
-
 st.title("Upload File")
 st.write("Select a file to store it in the managed workspace.")
+user_id = require_legacy_user_id()
 st.caption(
     f"Maximum upload size: {MAX_UPLOAD_SIZE_MB} MB"
 )
@@ -67,11 +65,13 @@ if upload_clicked:
                     result = upload_file(
                         filename,
                         file_bytes,
-                        session
+                        session,
+                        user_id,
                     )
                     organized = organize_uploaded_file(
                         session,
                         result.file_id,
+                        user_id,
                         Path(result.saved_path),
                     )
                     if commit_session_changes(

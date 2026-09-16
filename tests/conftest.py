@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from fastapi.testclient import TestClient
 
+from backend.database import db as database_db
 from backend.database.db import Base, enable_sqlite_foreign_keys
 from backend.database.models import User
 from backend.dependencies.auth_dependency import get_current_user
@@ -97,6 +98,42 @@ def unauthenticated_client(test_session):
         yield test_client
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def transactional_client(test_engine):
+    """Use the real request-scoped DB context for commit/rollback tests."""
+    testing_session = sessionmaker(
+        bind=test_engine,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    with testing_session() as setup_session:
+        user = User(
+            email="transaction-owner@example.com",
+            password_hash="not-a-real-password-hash",
+        )
+        setup_session.add(user)
+        setup_session.commit()
+        user_id = user.id
+        user_email = user.email
+
+    current_user = User(
+        id=user_id,
+        email=user_email,
+        password_hash="not-a-real-password-hash",
+    )
+
+    original_session_factory = database_db.SessionLocal
+    database_db.SessionLocal = testing_session
+    app.dependency_overrides[get_current_user] = lambda: current_user
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as test_client:
+            yield test_client, testing_session, current_user
+    finally:
+        app.dependency_overrides.clear()
+        database_db.SessionLocal = original_session_factory
 
 
 @pytest.fixture

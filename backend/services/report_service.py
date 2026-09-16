@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import settings
 from backend.config.settings import MAX_REPORT_CHARTS
+from backend.database.db import commit_session_changes_on_error
 from backend.database.models import FileRecord
 from backend.database.repositories import (
     ResourceForbiddenError,
@@ -259,6 +260,7 @@ def create_report(
             user_id=user_id,
             status="failed",
         )
+        commit_session_changes_on_error(session)
         raise ReportGenerationError("The HTML report could not be saved.") from error
 
     try:
@@ -278,6 +280,7 @@ def create_report(
             user_id=user_id,
             status="failed",
         )
+        commit_session_changes_on_error(session)
         raise ReportGenerationError("The PDF report could not be saved.") from error
 
     return SavedReportResult(

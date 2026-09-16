@@ -4,9 +4,6 @@ import { downloadAuthenticatedFile } from "../api/download";
 import ChartPreview from "../components/ChartPreview";
 import CsvFileSelect from "../components/CsvFileSelect";
 
-const MAX_REPORT_CHARTS = 10;
-const AGGREGATIONS = ["Mean", "Sum", "Minimum", "Maximum", "Count"];
-
 function isNumericType(type = "") {
   return /int|float|double|decimal/.test(type.toLowerCase());
 }
@@ -17,6 +14,7 @@ function isDateType(type = "") {
 
 function ReportsPage() {
   const [files, setFiles] = useState([]);
+  const [reportSettings, setReportSettings] = useState(null);
   const [fileId, setFileId] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [charts, setCharts] = useState([]);
@@ -36,8 +34,14 @@ function ReportsPage() {
   const [isLoadingFiles, setIsLoadingFiles] = useState(true);
 
   useEffect(() => {
-    apiClient.get("/api/analyzer/analyzable_files")
-      .then((response) => setFiles(response.data))
+    Promise.all([
+      apiClient.get("/api/analyzer/analyzable_files"),
+      apiClient.get("/api/settings/public"),
+    ])
+      .then(([filesResponse, settingsResponse]) => {
+        setFiles(filesResponse.data);
+        setReportSettings(settingsResponse.data);
+      })
       .catch((error) => setErrorMessage(getErrorMessage(error, "Could not load CSV files.")))
       .finally(() => setIsLoadingFiles(false));
   }, []);
@@ -56,6 +60,8 @@ function ReportsPage() {
     [result],
   );
   const orderedColumns = [...dateColumns, ...numericColumns];
+  const maxReportCharts = reportSettings?.max_report_charts || 0;
+  const aggregations = reportSettings?.valid_aggregations || [];
   const availableChartTypes = [
     ...(numericColumns.length ? ["histogram"] : []),
     ...(categoricalColumns.length ? ["bar"] : []),
@@ -244,8 +250,8 @@ function ReportsPage() {
         <>
           <section className="panel section-stack">
             <div className="section-heading">
-              <div><h2>Report charts</h2><p className="muted">{charts.length} of {MAX_REPORT_CHARTS} charts added</p></div>
-              {charts.length < MAX_REPORT_CHARTS && !isEditingChart && availableChartTypes.length > 0 && <button type="button" className="button secondary" onClick={startAddingChart}>Add chart</button>}
+              <div><h2>Report charts</h2><p className="muted">{charts.length} of {maxReportCharts} charts added</p></div>
+              {charts.length < maxReportCharts && !isEditingChart && availableChartTypes.length > 0 && <button type="button" className="button secondary" onClick={startAddingChart}>Add chart</button>}
             </div>
             {availableChartTypes.length === 0 && <p className="empty-text">This CSV does not contain columns that can be charted.</p>}
             {charts.length === 0 && !isEditingChart && availableChartTypes.length > 0 && <p className="empty-text">Add a chart to begin the report.</p>}
@@ -261,7 +267,7 @@ function ReportsPage() {
                 </article>
               ))}
             </div>
-            {charts.length >= MAX_REPORT_CHARTS && <p className="alert">A report can contain up to {MAX_REPORT_CHARTS} charts.</p>}
+            {charts.length >= maxReportCharts && <p className="alert">A report can contain up to {maxReportCharts} charts.</p>}
           </section>
 
           {isEditingChart && (
@@ -275,7 +281,7 @@ function ReportsPage() {
                   {chartType === "bar" && <select aria-label="Bar values" value={yColumn} onChange={(event) => setYColumn(event.target.value)}><option value="">Count rows</option>{numericColumns.map((column) => <option key={column} value={column}>{column}</option>)}</select>}
                   {chartType === "line" && <select aria-label="Y-axis column" value={yColumn} onChange={(event) => setYColumn(event.target.value)} required><option value="">Y-axis column</option>{numericColumns.map((column) => <option key={column} value={column}>{column}</option>)}</select>}
                   {chartType === "scatter" && <select aria-label="Y-axis column" value={yColumn} onChange={(event) => setYColumn(event.target.value)} required><option value="">Y-axis column</option>{scatterYColumns.map((column) => <option key={column} value={column}>{column}</option>)}</select>}
-                  {chartType === "bar" && yColumn && <select aria-label="Aggregation" value={aggregation} onChange={(event) => setAggregation(event.target.value)} required><option value="">Aggregation</option>{AGGREGATIONS.map((item) => <option key={item} value={item}>{item}</option>)}</select>}
+                  {chartType === "bar" && yColumn && <select aria-label="Aggregation" value={aggregation} onChange={(event) => setAggregation(event.target.value)} required><option value="">Aggregation</option>{aggregations.map((item) => <option key={item} value={item}>{item}</option>)}</select>}
                   {chartType === "histogram" && <input type="number" min="1" max="100" value={histogramBins} aria-label="Histogram bins" onChange={(event) => setHistogramBins(event.target.value)} required />}
                 </div>
                 <div className="result-actions"><button className="button primary" disabled={busyAction === "chart"}>{busyAction === "chart" ? "Validating..." : editingIndex === null ? "Preview and add chart" : "Preview and save changes"}</button><button type="button" className="button secondary" disabled={busyAction === "chart"} onClick={cancelEditing}>Cancel</button></div>

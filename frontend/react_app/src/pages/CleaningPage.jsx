@@ -13,6 +13,7 @@ function CleaningPage() {
   const [fileId, setFileId] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [result, setResult] = useState(null);
+  const [previewOptions, setPreviewOptions] = useState(null);
   const [savedResult, setSavedResult] = useState(null);
   const [removeDuplicates, setRemoveDuplicates] = useState(false);
   const [numericColumn, setNumericColumn] = useState("");
@@ -47,6 +48,7 @@ function CleaningPage() {
     setFileId(nextFileId);
     setAnalysis(null);
     setResult(null);
+    setPreviewOptions(null);
     setSavedResult(null);
     setErrorMessage("");
     setSuccessMessage("");
@@ -70,6 +72,8 @@ function CleaningPage() {
     setBusyAction("preview");
     setErrorMessage("");
     setSuccessMessage("");
+    setResult(null);
+    setPreviewOptions(null);
     setSavedResult(null);
 
     const options = {
@@ -87,6 +91,7 @@ function CleaningPage() {
     try {
       const response = await apiClient.post(`/api/cleaning/${fileId}`, options);
       setResult(response.data);
+      setPreviewOptions(options);
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Could not preview the cleaning result."));
     } finally {
@@ -101,7 +106,7 @@ function CleaningPage() {
     try {
       const response = await apiClient.post(
         `/api/cleaning/save_cleaning_results/${fileId}`,
-        result.cleaned_dataframe,
+        previewOptions,
       );
       setSavedResult(response.data);
       setSuccessMessage("Cleaned CSV and Excel files were saved to your library.");
@@ -166,7 +171,7 @@ function CleaningPage() {
             <article className="metric-card"><p>Missing remaining</p><strong>{result.remaining_missing_values}</strong></article>
           </section>
           <section className="panel section-stack">
-            <div className="section-heading"><div><h2>Cleaned preview</h2><p className="muted">{result.missing_values_filled} values filled · {result.rows_dropped} rows dropped</p></div><button type="button" className="button primary" disabled={busyAction === "save"} onClick={saveResult}>{busyAction === "save" ? "Saving..." : "Save cleaned files"}</button></div>
+            <div className="section-heading"><div><h2>Cleaned preview</h2><p className="muted">{result.missing_values_filled} values filled · {result.rows_dropped} rows dropped</p></div><button type="button" className="button primary" disabled={!previewOptions || busyAction === "save"} onClick={saveResult}>{busyAction === "save" ? "Saving..." : "Save cleaned files"}</button></div>
             <DataTable rows={result.cleaned_dataframe} />
             {savedResult && <div className="result-actions"><button type="button" className="button secondary" onClick={() => downloadFile(savedResult.csv_file_id, savedResult.csv_filename)}>Download CSV</button><button type="button" className="button secondary" onClick={() => downloadFile(savedResult.excel_file_id, savedResult.excel_filename)}>Download Excel</button></div>}
           </section>

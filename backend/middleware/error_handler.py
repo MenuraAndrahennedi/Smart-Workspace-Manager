@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from backend.services.analysis_service import CSVAnalysisError, CSVLimitError
@@ -13,9 +14,29 @@ from backend.database.repositories import ResourceForbiddenError
 
 logger = logging.getLogger(__name__)
 
-# Error 422 - handled by FastAPI automatically
+
+def _validation_error_message(exc: RequestValidationError) -> str:
+    messages: list[str] = []
+    for error in exc.errors():
+        location = ".".join(str(part) for part in error.get("loc", ()))
+        message = error.get("msg", "Invalid value")
+        messages.append(f"{location}: {message}" if location else message)
+    return "; ".join(messages) or "The request data is invalid."
 
 def register_exception_handlers(app: FastAPI):
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "Validation Error",
+                "message": _validation_error_message(exc),
+            },
+        )
+
     @app.exception_handler(Exception)
     async def app_exception_handler(request: Request, exc: Exception):
         logger.exception("Application error: %s %s", request.method, request.url.path)

@@ -1,5 +1,6 @@
 import os 
 from pathlib import Path
+from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 from backend.utils.file_utils import PROJECT_ROOT, get_or_create_path
@@ -89,9 +90,48 @@ def get_log_value_accepted(log_value: str) -> str:
     else:
         raise ValueError(f"Cannot accept {log_value} log value")
 
-def get_valid_frontend_origin(name: str) -> str:
-    uri = get_env_variable(name)
-    return uri
+def get_valid_frontend_origins(
+    name: str,
+    legacy_name: str | None = None,
+) -> list[str]:
+    value = os.getenv(name)
+
+    if value is None and legacy_name is not None:
+        value = os.getenv(legacy_name)
+
+    if value is None:
+        raise ValueError(f"Environment variable '{name}' is not set.")
+
+    origins: list[str] = []
+
+    for configured_origin in value.split(","):
+        origin = configured_origin.strip().rstrip("/")
+        if not origin:
+            continue
+
+        parsed_origin = urlsplit(origin)
+        if (
+            parsed_origin.scheme not in {"http", "https"}
+            or not parsed_origin.netloc
+            or parsed_origin.path
+            or parsed_origin.query
+            or parsed_origin.fragment
+            or parsed_origin.username is not None
+            or parsed_origin.password is not None
+        ):
+            raise ValueError(
+                f"Environment variable '{name}' contains an invalid frontend origin."
+            )
+
+        if origin not in origins:
+            origins.append(origin)
+
+    if not origins:
+        raise ValueError(
+            f"Environment variable '{name}' must contain at least one frontend origin."
+        )
+
+    return origins
 
 DATABASE_URL = get_valid_database_url("DATABASE_URL")
 DATA_ROOT = get_or_create_path(get_env_variable("DATA_ROOT"))
@@ -106,7 +146,7 @@ MAX_FILENAME_ATTEMPTS = get_positive_int("MAX_FILENAME_ATTEMPTS")
 
 TIME_SYSTEM_STARTED = time_now()
 
-MAX_CSV_ANALYSIS_SIZE_MB = MAX_UPLOAD_SIZE_MB
+MAX_CSV_ANALYSIS_SIZE_MB = get_upload_size("MAX_CSV_ANALYSIS_SIZE_MB")
 MAX_CSV_ROWS=get_int("MAX_CSV_ROWS")
 MAX_CSV_COLUMNS=get_int("MAX_CSV_COLUMNS")
 
@@ -114,4 +154,7 @@ MAX_CHART_ROWS=get_int("MAX_CHART_ROWS")
 MAX_BAR_CATEGORIES=get_int("MAX_BAR_CATEGORIES")
 MAX_REPORT_CHARTS=get_int("MAX_REPORT_CHARTS")
 
-FRONTEND_ORIGIN=get_valid_frontend_origin("FRONTEND_ORIGIN")
+FRONTEND_ORIGINS = get_valid_frontend_origins(
+    "FRONTEND_ORIGINS",
+    legacy_name="FRONTEND_ORIGIN",
+)

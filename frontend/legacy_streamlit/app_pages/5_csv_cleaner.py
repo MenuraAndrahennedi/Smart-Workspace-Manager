@@ -14,23 +14,23 @@ from backend.services.cleaning_service import (
     save_cleaning_result,
 )
 from backend.services.file_service import read_managed_file_bytes
-from frontend.ui_helpers import commit_session_changes, select_analyzable_csv
+from frontend.legacy_streamlit.ui_helpers import (
+    commit_session_changes,
+    require_legacy_user_id,
+    select_analyzable_csv,
+)
 
 logger = logging.getLogger(__name__)
 
-st.set_page_config(
-    page_title="CSV Cleaner", 
-    page_icon=":material/folder_open:", 
-    layout="wide"
-)
-
 st.title("CSV Cleaner")
 st.caption("Select an organized CSV file and save & export the cleaned data.")
+user_id = require_legacy_user_id()
 
 with get_db_session() as session:
     with st.form("csv_cleaning_form"):
         cleaning_file_id = select_analyzable_csv(
             session,
+            user_id,
             empty_message="No organized CSV files are available for cleaning.",
         )
 
@@ -63,6 +63,7 @@ with get_db_session() as session:
                     selected_file_df = load_cleaning_source(
                         session,
                         cleaning_file_id,
+                        user_id,
                     )
                     st.session_state["original_file_preview"] = selected_file_df
                     st.session_state["cleaning_file_id"] = cleaning_file_id
@@ -219,6 +220,7 @@ with get_db_session() as session:
                     cleaned_results = preview_cleaning(
                             session=session,
                             file_id=cleaning_file_id,
+                            user_id=user_id,
                             cleaning_options=cleaning_options,
                     )
                     st.session_state["cleaned_results"] = cleaned_results
@@ -275,6 +277,7 @@ with get_db_session() as session:
                     saved_results = save_cleaning_result(
                         session=session,
                         file_id=cleaning_file_id,
+                        user_id=user_id,
                         cleaned_dataframe=cleaned_results.cleaned_dataframe,
                     )
                     saved = commit_session_changes(

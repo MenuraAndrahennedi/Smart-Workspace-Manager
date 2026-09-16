@@ -11,6 +11,7 @@ from backend.utils.constants import ORGANIZER_CATEGORY_RULES, DEFAULT_ORGANIZER_
 from backend.config import settings
 from backend.utils.file_utils import ensure_dated_directory
 from backend.utils.time_utils import time_now
+from backend.database.db import commit_session_changes_on_error
 from backend.database.repositories import update_file_location, create_automation_log
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,7 @@ def organize_uploaded_file(
                     status="failed",
                     message=str(error),
                 )
+            commit_session_changes_on_error(session)
         except Exception:
             logger.exception(
                 "Could not save the organization failure state."

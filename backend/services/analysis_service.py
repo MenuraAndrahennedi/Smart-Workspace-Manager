@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from pandas.api.types import is_numeric_dtype
 
 from backend.config.settings import MAX_CSV_ANALYSIS_SIZE_MB, MAX_CSV_ROWS, MAX_CSV_COLUMNS
+from backend.database.db import commit_session_changes_on_error
 from backend.database.models import FileRecord
 from backend.database.repositories import query_files, get_file_by_id, create_analysis_job, update_analysis_job
 from backend.utils.validators import validate_file_extension
@@ -254,7 +255,7 @@ def analyze_file_and_record_job(
             summary=None,
             error_message=str(error),
         )
-
+        commit_session_changes_on_error(session)
         raise
 
     except Exception as error:
@@ -266,6 +267,7 @@ def analyze_file_and_record_job(
             summary=None,
             error_message="An unexpected error occurred while analyzing the CSV.",
         )
+        commit_session_changes_on_error(session)
         raise
     
 

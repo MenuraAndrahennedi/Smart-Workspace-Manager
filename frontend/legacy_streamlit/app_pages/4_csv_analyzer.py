@@ -5,18 +5,17 @@ import streamlit as st
 
 from backend.database.db import get_db_session
 from backend.services.analysis_service import CSVAnalysisError, CSVLimitError, analyze_file_and_record_job, filter_csv_data
-from frontend.ui_helpers import commit_session_changes, select_analyzable_csv
+from frontend.legacy_streamlit.ui_helpers import (
+    commit_session_changes,
+    require_legacy_user_id,
+    select_analyzable_csv,
+)
 
 logger = logging.getLogger(__name__)
 
-st.set_page_config(
-    page_title="CSV Analyzer", 
-    page_icon=":material/folder_open:", 
-    layout="wide"
-)
-
 st.title("CSV Analyzer")
 st.caption("Select an organized CSV file and inspect its contents.")
+user_id = require_legacy_user_id()
 
 
 
@@ -24,6 +23,7 @@ with get_db_session() as session:
     with st.form("csv_analysis_form"):
         selected_file_id = select_analyzable_csv(
             session,
+            user_id,
             empty_message="No organized CSV files are available for analysis.",
         )
         
@@ -57,6 +57,7 @@ with get_db_session() as session:
                         analyze_file_and_record_job(
                             session=session,
                             file_id=selected_file_id,
+                            user_id=user_id,
                             preview_rows=int(preview_rows),
                         )
                     )
@@ -265,6 +266,7 @@ with get_db_session() as session:
                         filtered_dataframe = filter_csv_data(
                             session=session,
                             file_id=analyzed_file_id,
+                            user_id=user_id,
                             selected_columns=selected_columns,
                             filter_column=filter_column,
                             operator=operator,

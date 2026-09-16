@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from backend.config.settings import FRONTEND_ORIGIN
+from backend.config.settings import FRONTEND_ORIGINS
 from backend.middleware.error_handler import register_exception_handlers
 from backend.routes.health_routes import router as health_router
 from backend.routes.file_routes import router as file_router
@@ -14,10 +14,6 @@ from backend.routes.auth_routes import router as auth_router
 from fastapi.middleware.cors import CORSMiddleware
 
 
-allowed_origins = [
-    FRONTEND_ORIGIN 
-]
-
 # FastAPI application
 app = FastAPI(
     title="Smart Workspace Manager API",
@@ -27,7 +23,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=FRONTEND_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

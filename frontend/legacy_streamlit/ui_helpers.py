@@ -10,6 +10,14 @@ from backend.utils.file_utils import format_file_size
 logger = logging.getLogger(__name__)
 
 
+def require_legacy_user_id() -> int:
+    user_id = st.session_state.get("legacy_user_id")
+    if user_id is None:
+        st.error("Sign in from the legacy application entry page first.")
+        st.stop()
+    return int(user_id)
+
+
 def normalize_exclusive_all_selection(
     selected_options: list[str],
     previous_options: list[str],
@@ -67,6 +75,7 @@ def commit_session_changes(
 
 def select_analyzable_csv(
     session: Session,
+    user_id: int,
     *,
     empty_message: str,
     index: int | None = 0,
@@ -74,7 +83,7 @@ def select_analyzable_csv(
     placeholder: str | None = None,
 ) -> int | None:
     try:
-        csv_files = get_analyzable_csv_files(session)
+        csv_files = get_analyzable_csv_files(session, user_id)
     except Exception:
         logger.exception("Could not load the available CSV files.")
         st.error("Available CSV files could not be loaded. Please try again.")

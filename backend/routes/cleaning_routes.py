@@ -1,7 +1,6 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
-import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.database.models import User
@@ -33,17 +32,22 @@ def clean_and_get_results(
 @router.post("/save_cleaning_results/{file_id}", response_model=CleaningSaveResponse)
 def save_results(
     file_id: int,
-    cleaned_dataframe: list[dict],
+    request: CleaningRequest,
     date_value: datetime | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_authenticated_user),
 ):
-    dataframe = pd.DataFrame(cleaned_dataframe)
+    preview_result = preview_cleaning(
+        session=db,
+        file_id=file_id,
+        user_id=current_user.id,
+        cleaning_options=request,
+    )
     return save_cleaning_result(
         session=db,
         file_id=file_id,
         user_id=current_user.id,
-        cleaned_dataframe=dataframe,
+        cleaned_dataframe=preview_result.cleaned_dataframe,
         date_value=date_value,
     )
 

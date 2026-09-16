@@ -11,20 +11,18 @@ from backend.services.file_service import (
 )
 from backend.utils.constants import ORGANIZER_CATEGORY_RULES
 from backend.utils.file_utils import format_file_size
-from frontend.ui_helpers import enforce_exclusive_all_selection
+from frontend.legacy_streamlit.ui_helpers import (
+    enforce_exclusive_all_selection,
+    require_legacy_user_id,
+)
 
 logger = logging.getLogger(__name__)
-
-st.set_page_config(
-    page_title="File Library", 
-    page_icon=":material/folder_open:", 
-    layout="wide"
-)
 
 st.title("File Library")
 st.caption(
     "Search, filter, download, and manage uploaded files."
 )
+user_id = require_legacy_user_id()
 
 # Search bar
 search_term_input = st.text_input(label = "Search Files", placeholder = "Search files here")
@@ -110,6 +108,7 @@ def confirm_delete(
                     delete_actual_file(
                         session=delete_session,
                         file_id=file_id,
+                        user_id=user_id,
                     )
 
                 st.session_state["delete_success"] = (
@@ -144,6 +143,7 @@ with get_db_session() as session:
     try:
         files = get_library_files(
             session=session,
+            user_id=user_id,
             search_term=search_term_input,
             category=category_filter,
             status=status_filter,

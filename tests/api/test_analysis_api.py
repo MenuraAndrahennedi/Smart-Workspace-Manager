@@ -127,6 +127,8 @@ def test_analysis_rejects_invalid_preview_count(client, uploaded_csv):
     )
 
     assert response.status_code == 422
+    assert response.json()["error"] == "Validation Error"
+    assert isinstance(response.json()["message"], str)
 
 
 def test_analysis_of_another_users_file_returns_403(

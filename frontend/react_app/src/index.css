@@ -593,6 +593,37 @@ select:focus {
   margin-top: 20px;
   justify-content: flex-end;
 }
+.library-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+.report-list-panel {
+  display: grid;
+  gap: 14px;
+}
+.report-download-list {
+  display: grid;
+  gap: 10px;
+}
+.report-download-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  background: #fafafa;
+}
+.report-download-item small {
+  color: #737373;
+}
+.report-download-item .text-button {
+  justify-self: start;
+}
+.library-files-panel {
+  min-width: 0;
+}
 .selected-workbook,
 .converted-file-details {
   display: flex;
@@ -631,6 +662,9 @@ select:focus {
   }
   .form-grid {
     grid-template-columns: 1fr 1fr;
+  }
+  .library-layout {
+    grid-template-columns: 1fr;
   }
 }
 @media (max-width: 560px) {

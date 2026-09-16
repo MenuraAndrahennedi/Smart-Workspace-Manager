@@ -1,6 +1,12 @@
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const configuredApiUrl = import.meta.env.VITE_API_BASE_URL;
+
+if (!configuredApiUrl) {
+  throw new Error("VITE_API_BASE_URL is not configured.");
+}
+
+const API_BASE_URL = configuredApiUrl.replace(/\/+$/, "");
 
 export const apiClient = axios.create({ baseURL: API_BASE_URL });
 
@@ -29,7 +35,12 @@ apiClient.interceptors.response.use(
 export function getErrorMessage(error, fallbackMessage) {
   const serverMessage = error.response?.data?.message || error.response?.data?.detail;
 
-  if (serverMessage) return serverMessage;
+  if (typeof serverMessage === "string") return serverMessage;
+  if (Array.isArray(serverMessage)) {
+    return serverMessage
+      .map((item) => item?.msg || String(item))
+      .join("; ");
+  }
   if (error.response?.status === 401) return "Your session has expired. Please sign in again.";
   if (error.response?.status === 403) return "You do not have permission to access this resource.";
   return fallbackMessage;

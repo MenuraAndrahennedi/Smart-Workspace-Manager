@@ -13,23 +13,21 @@ from backend.services.xlsx_to_csv_service import (
     preview_xlsx_sheet,
 )
 from backend.utils.file_utils import format_file_size
-from frontend.ui_helpers import commit_session_changes
+from frontend.legacy_streamlit.ui_helpers import (
+    commit_session_changes,
+    require_legacy_user_id,
+)
 
 
 logger = logging.getLogger(__name__)
 
-st.set_page_config(
-    page_title="XLSX to CSV",
-    page_icon=":material/csv:",
-    layout="wide",
-)
-
 st.title("XLSX to CSV")
 st.caption("Convert one worksheet from an organized XLSX workbook into CSV.")
+user_id = require_legacy_user_id()
 
 with get_db_session() as session:
     try:
-        workbooks = get_convertible_xlsx_files(session)
+        workbooks = get_convertible_xlsx_files(session, user_id)
     except Exception:
         logger.exception("Could not load XLSX workbooks.")
         st.error("Available XLSX workbooks could not be loaded. Please try again.")
@@ -53,7 +51,7 @@ with get_db_session() as session:
     )
 
     try:
-        sheet_names = get_xlsx_sheet_names(session, selected_file_id)
+        sheet_names = get_xlsx_sheet_names(session, selected_file_id, user_id)
     except XLSXConversionError as error:
         st.error(str(error))
         st.stop()
@@ -93,6 +91,7 @@ with get_db_session() as session:
                 preview_result = preview_xlsx_sheet(
                     session=session,
                     file_id=selected_file_id,
+                    user_id=user_id,
                     sheet_name=selected_sheet,
                     preview_rows=preview_rows,
                 )
@@ -129,6 +128,7 @@ with get_db_session() as session:
                 conversion_result = convert_xlsx_to_csv(
                     session=session,
                     file_id=selected_file_id,
+                    user_id=user_id,
                     sheet_name=selected_sheet,
                 )
                 committed = commit_session_changes(

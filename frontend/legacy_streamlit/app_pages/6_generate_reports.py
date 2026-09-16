@@ -18,18 +18,17 @@ from backend.services.visualization_service import (
     get_chart_selection_options,
 )
 from backend.utils.constants import VALID_AGGREGATIONS
-from frontend.ui_helpers import commit_session_changes, select_analyzable_csv
+from frontend.legacy_streamlit.ui_helpers import (
+    commit_session_changes,
+    require_legacy_user_id,
+    select_analyzable_csv,
+)
 
 logger = logging.getLogger(__name__)
 
-st.set_page_config(
-    page_title="Generate reports",
-    page_icon=":material/description:",
-    layout="wide",
-)
-
 st.title("Generate reports")
 st.caption("Build a report from charts and export it as HTML and PDF.")
+user_id = require_legacy_user_id()
 
 st.session_state.setdefault("report_file_id", None)
 st.session_state.setdefault("report_charts", [])
@@ -39,6 +38,7 @@ st.session_state.setdefault("saved_report", None)
 with get_db_session() as session:
     selected_file_id = select_analyzable_csv(
         session,
+        user_id,
         empty_message="No organized CSV files are available for reporting.",
         index=None,
         placeholder="Choose a CSV file",
@@ -56,7 +56,7 @@ with get_db_session() as session:
         st.session_state["saved_report"] = None
 
     try:
-        _, dataframe = load_organized_csv(session, selected_file_id)
+        _, dataframe = load_organized_csv(session, selected_file_id, user_id)
         chart_options = get_chart_selection_options(dataframe)
     except CSVLimitError as error:
         st.warning(str(error))
@@ -266,6 +266,7 @@ with get_db_session() as session:
                     saved_report = create_report(
                         session=session,
                         file_id=selected_file_id,
+                        user_id=user_id,
                         chart_configurations=report_charts,
                     )
                 if commit_session_changes(

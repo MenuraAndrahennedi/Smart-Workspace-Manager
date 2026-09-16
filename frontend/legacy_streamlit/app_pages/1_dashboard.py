@@ -5,22 +5,19 @@ import streamlit as st
 from backend.database.db import get_db_session
 from backend.services.dashboard_service import get_dashboard_data
 from backend.utils.file_utils import format_file_size
+from frontend.legacy_streamlit.ui_helpers import require_legacy_user_id
 
 logger = logging.getLogger(__name__)
 
-st.set_page_config(
-    page_title="Dashboard", 
-    page_icon=":material/dashboard:", 
-    layout="wide"
-)
-
 st.title("Dashboard")
 st.caption("Overview of your managed workspace files.")
+user_id = require_legacy_user_id()
 
 try:
     with get_db_session() as session:
         dashboard_data = get_dashboard_data(
             session=session,
+            user_id=user_id,
             recent_limit=5,
         )
 
