@@ -15,6 +15,7 @@ from backend.services.storage_service import (
     delete_stored_file,
     restore_staged_files,
     resolve_managed_path,
+    resolve_required_stored_file,
     save_uploaded_bytes,
     stage_files_for_deletion,
 )
@@ -47,11 +48,7 @@ class FileUploadResult:
 
 
 def get_download_path(storage_path: str | Path) -> Path:
-    return resolve_managed_path(
-        storage_path,
-        must_exist=True,
-        file_only=True,
-    )
+    return resolve_required_stored_file(storage_path)
 
 
 def read_managed_file_bytes(storage_path: str | Path) -> bytes:
@@ -150,16 +147,34 @@ def delete_actual_file(
         raise FileNotFoundError(f"File record with ID {file_id} was not found.")
 
     original_name = file_record.original_name
-    storage_path = Path(file_record.storage_path).resolve()
-    physical_file_existed = storage_path.is_file()
+    try:
+        storage_path = resolve_managed_path(
+            file_record.storage_path,
+            file_only=True,
+        )
+    except (OSError, ValueError):
+        storage_path = None
+
+    physical_file_existed = (
+        storage_path is not None and storage_path.is_file()
+    )
     report_paths = get_report_storage_paths(
         session=session,
         file_id=file_id,
         user_id=user_id,
     )
-    staged_deletions = stage_files_for_deletion(
-        [storage_path, *report_paths]
-    )
+    managed_paths: list[Path] = []
+    for candidate_path in [storage_path, *report_paths]:
+        if candidate_path is None:
+            continue
+        try:
+            managed_paths.append(
+                resolve_managed_path(candidate_path, file_only=True)
+            )
+        except (OSError, ValueError):
+            continue
+
+    staged_deletions = stage_files_for_deletion(managed_paths)
 
     try:
         db_record_deleted = delete_file(
@@ -187,7 +202,10 @@ def delete_actual_file(
         "file_id": file_id,
         "original_name": original_name,
         "database_deleted": db_record_deleted,
-        "storage_deleted": storage_path in staged_original_paths,
+        "storage_deleted": (
+            storage_path is not None
+            and storage_path in staged_original_paths
+        ),
         "report_files_deleted": sum(
             Path(report_path).resolve() in staged_original_paths
             for report_path in report_paths

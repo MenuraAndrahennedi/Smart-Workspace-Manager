@@ -8,6 +8,13 @@ from backend.utils.file_utils import ensure_directory, file_exists
 from backend.utils.constants import STORAGE_DIRECTORIES
 
 PENDING_FILE_DELETIONS_KEY = "pending_file_deletions"
+STORED_FILE_UNAVAILABLE_MESSAGE = (
+    "The stored file is unavailable; please re-upload it."
+)
+
+
+class StoredFileUnavailableError(FileNotFoundError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -40,6 +47,19 @@ def resolve_managed_path(
         raise ValueError(f"Storage path is not a file: {candidate_path}")
 
     return candidate_path
+
+
+def resolve_required_stored_file(path: Path | str) -> Path:
+    try:
+        return resolve_managed_path(
+            path,
+            must_exist=True,
+            file_only=True,
+        )
+    except (FileNotFoundError, OSError, ValueError) as error:
+        raise StoredFileUnavailableError(
+            STORED_FILE_UNAVAILABLE_MESSAGE
+        ) from error
 
 def resolve_storage_path(path: Path | str) -> Path:
     if Path(path).is_absolute():

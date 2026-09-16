@@ -11,6 +11,7 @@ from backend.services.report_service import ReportGenerationError
 from backend.services.xlsx_to_csv_service import XLSXConversionError
 from backend.services.visualization_service import VisualizationError
 from backend.database.repositories import ResourceForbiddenError
+from backend.services.storage_service import StoredFileUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,19 @@ def register_exception_handlers(app: FastAPI):
             status_code=404,
             content={
                 "error":"Not Found",
+                "message": str(exc),
+            },
+        )
+
+    @app.exception_handler(StoredFileUnavailableError)
+    async def stored_file_unavailable_handler(
+        request: Request,
+        exc: StoredFileUnavailableError,
+    ):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "Stored File Unavailable",
                 "message": str(exc),
             },
         )

@@ -78,16 +78,25 @@ def test_analyze_csv_empty_file(analysis_data_root):
 
 def test_analyze_csv_path_failures(tmp_path, analysis_data_root):
     csv_path = analysis_data_root / "missing.csv"
-    with pytest.raises(FileNotFoundError, match="not exist"):
+    with pytest.raises(
+        FileNotFoundError,
+        match="stored file is unavailable; please re-upload it",
+    ):
         analyze_csv(csv_path)
 
     csv_path_1 = tmp_path / "file.csv"
     csv_path_1.write_text("name,age\nAlice,22\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="not related to data root"):
+    with pytest.raises(
+        FileNotFoundError,
+        match="stored file is unavailable; please re-upload it",
+    ):
         analyze_csv(csv_path_1)
 
     csv_path = analysis_data_root
-    with pytest.raises(ValueError, match="not a file"):
+    with pytest.raises(
+        FileNotFoundError,
+        match="stored file is unavailable; please re-upload it",
+    ):
         analyze_csv(csv_path)
 
     pdf_path = analysis_data_root / "file.pdf"

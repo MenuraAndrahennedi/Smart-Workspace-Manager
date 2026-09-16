@@ -11,6 +11,10 @@ from backend.utils.time_utils import time_now
 
 password_hash = PasswordHash.recommended()
 
+
+class UserAlreadyExistsError(ValueError):
+    pass
+
 def hash_password(password: str) -> str:
     return password_hash.hash(password)
 
@@ -27,9 +31,14 @@ def register_user(
 ) -> User:
     normalized_email = normalize_email(email)
 
+    if len(password) < 8:
+        raise ValueError("Password must contain at least 8 characters.")
+    if len(password) > 128:
+        raise ValueError("Password cannot contain more than 128 characters.")
+
     existing_user = get_user_by_email(session, normalized_email)
     if existing_user is not None:
-        raise ValueError("User with this email already exists.")
+        raise UserAlreadyExistsError("User with this email already exists.")
 
     return create_user(
         session=session,

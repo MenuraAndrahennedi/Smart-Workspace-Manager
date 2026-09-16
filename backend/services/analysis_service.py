@@ -14,7 +14,7 @@ from backend.database.db import commit_session_changes_on_error
 from backend.database.models import FileRecord
 from backend.database.repositories import query_files, get_file_by_id, create_analysis_job, update_analysis_job
 from backend.utils.validators import validate_file_extension
-from backend.services.storage_service import resolve_managed_path
+from backend.services.storage_service import resolve_required_stored_file
 from backend.utils.dataframe_utils import dataframe_to_records
 
 logger = logging.getLogger(__name__)
@@ -62,11 +62,7 @@ class RecordedCSVAnalysis:
         }
 
 def load_csv_with_limits(csv_path: Path) -> pd.DataFrame:
-    csv_path = resolve_managed_path(
-        csv_path,
-        must_exist=True,
-        file_only=True,
-    )
+    csv_path = resolve_required_stored_file(csv_path)
 
     if validate_file_extension(csv_path.name) != "csv":
         raise ValueError("Path does not point to a CSV file.")

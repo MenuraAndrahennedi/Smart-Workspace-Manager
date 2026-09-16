@@ -1,6 +1,51 @@
 from backend.services.auth_service import register_user
 
 
+def test_register_creates_user_and_returns_bearer_token(
+    unauthenticated_client,
+    test_session,
+):
+    response = unauthenticated_client.post(
+        "/api/auth/register",
+        json={
+            "email": "NEW@Example.com",
+            "password": "Secret123!",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["token_type"] == "bearer"
+    assert response.json()["access_token"]
+
+
+def test_register_rejects_duplicate_email(
+    unauthenticated_client,
+    test_session,
+):
+    register_user(test_session, "user@example.com", "Secret123!")
+
+    response = unauthenticated_client.post(
+        "/api/auth/register",
+        json={
+            "email": "USER@example.com",
+            "password": "Secret123!",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "User with this email already exists."
+
+
+def test_register_validates_email_and_password(unauthenticated_client):
+    response = unauthenticated_client.post(
+        "/api/auth/register",
+        json={"email": "not-an-email", "password": "short"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "Validation Error"
+
+
 def test_login_return_bearer_token(client, test_session):
     register_user(test_session, "uers@example.com", "Secret123!")
 

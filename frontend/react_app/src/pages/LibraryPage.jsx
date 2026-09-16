@@ -171,38 +171,6 @@ function LibraryPage() {
       {errorMessage && <p className="alert error">{errorMessage}</p>}
 
       <div className="library-layout">
-        <aside className="panel report-list-panel">
-          <div className="section-heading">
-            <div><p className="eyebrow">Exports</p><h2>Generated reports</h2></div>
-          </div>
-          {reportErrorMessage && <p className="alert error">{reportErrorMessage}</p>}
-          {isLoadingReports ? (
-            <p className="empty-text">Loading reports...</p>
-          ) : reports.length === 0 ? (
-            <p className="empty-text">No generated reports yet.</p>
-          ) : (
-            <div className="report-download-list">
-              {reports.map((report) => (
-                <article className="report-download-item" key={report.id}>
-                  <FileName
-                    name={`${report.source_name} report`}
-                    extension={report.report_type}
-                  />
-                  <small>{report.report_type.toUpperCase()} · {formatDate(report.created_at)}</small>
-                  <button
-                    className="text-button"
-                    type="button"
-                    disabled={busyReportId === report.id}
-                    onClick={() => downloadReport(report)}
-                  >
-                    {busyReportId === report.id ? "Downloading..." : `Download ${report.report_type.toUpperCase()}`}
-                  </button>
-                </article>
-              ))}
-            </div>
-          )}
-        </aside>
-
         <section className="panel library-files-panel">
           {isLoading ? (
             <p className="empty-text">Loading files...</p>
@@ -235,6 +203,30 @@ function LibraryPage() {
             </div>
           )}
         </section>
+
+        <aside className="panel report-list-panel">
+          <div className="section-heading">
+            <div><p className="eyebrow">Exports</p><h2>Generated reports</h2></div>
+          </div>
+          {reportErrorMessage && <p className="alert error">{reportErrorMessage}</p>}
+          {isLoadingReports ? (
+            <p className="empty-text">Loading reports...</p>
+          ) : reports.length === 0 ? (
+            <p className="empty-text">No generated reports yet.</p>
+          ) : (
+            <div className="report-download-list">
+              {reports.map((report) => (
+                <article className="report-download-item" key={report.id}>
+                  <FileName name={`${report.source_name} report`} extension={report.report_type} />
+                  <small>{report.report_type.toUpperCase()} · {formatDate(report.created_at)}</small>
+                  <button className="text-button" type="button" disabled={busyReportId === report.id} onClick={() => downloadReport(report)}>
+                    {busyReportId === report.id ? "Downloading..." : `Download ${report.report_type.toUpperCase()}`}
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+        </aside>
       </div>
 
       {filePendingDelete && (
@@ -254,7 +246,7 @@ function LibraryPage() {
               />
             </div>
             <p className="muted">
-              This file will be removed permanently. This action cannot be undone.
+              The file and its database record will be removed permanently. If the stored file is already unavailable, its obsolete record will still be removed.
             </p>
 
             <div className="modal-actions">

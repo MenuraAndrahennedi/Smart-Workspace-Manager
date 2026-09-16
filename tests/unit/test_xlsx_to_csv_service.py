@@ -232,7 +232,10 @@ def test_sheet_lookup_rejects_missing_managed_workbook(
         status="organized",
     )
 
-    with pytest.raises(XLSXConversionError, match="unavailable in managed storage"):
+    with pytest.raises(
+        FileNotFoundError,
+        match="stored file is unavailable; please re-upload it",
+    ):
         get_xlsx_sheet_names(test_session, missing_record.id, test_user.id)
 
 

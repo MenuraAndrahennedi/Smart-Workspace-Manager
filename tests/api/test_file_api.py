@@ -120,6 +120,62 @@ def test_download_file_returns_original_contents(client, uploaded_csv):
     assert 'filename="scores.csv"' in response.headers["content-disposition"]
 
 
+def test_missing_stored_file_returns_clear_reupload_message(
+    client,
+    test_session,
+    test_user,
+    temporary_data_root,
+):
+    from backend.database.repositories import create_file
+
+    stale_file = create_file(
+        session=test_session,
+        user_id=test_user.id,
+        original_name="missing.csv",
+        stored_name="missing-stored.csv",
+        extension="csv",
+        category="spreadsheets",
+        size_bytes=10,
+        storage_path="processed/spreadsheets/missing-stored.csv",
+        status="organized",
+    )
+
+    response = client.get(f"/api/files/{stale_file.id}/download")
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": "Stored File Unavailable",
+        "message": "The stored file is unavailable; please re-upload it.",
+    }
+
+
+def test_delete_removes_stale_windows_path_record(
+    client,
+    test_session,
+    test_user,
+    temporary_data_root,
+):
+    from backend.database.repositories import create_file
+
+    stale_file = create_file(
+        session=test_session,
+        user_id=test_user.id,
+        original_name="legacy.csv",
+        stored_name="legacy-stored.csv",
+        extension="csv",
+        category="spreadsheets",
+        size_bytes=10,
+        storage_path=r"C:\old-workspace\data\legacy-stored.csv",
+        status="organized",
+    )
+    stale_file_id = stale_file.id
+
+    response = client.delete(f"/api/files/{stale_file_id}")
+
+    assert response.status_code == 200
+    assert test_session.get(type(stale_file), stale_file_id) is None
+
+
 def test_file_owned_by_another_user_returns_403(
     client,
     test_session,

@@ -13,13 +13,24 @@ const FILE_TYPE_STYLES = {
   yaml: ["code", "YML"], yml: ["code", "YML"], txt: ["text", "TXT"],
 };
 
+const CATEGORY_EXTENSIONS = {
+  spreadsheets: "xlsx",
+  documents: "docx",
+  images: "png",
+  pdf: "pdf",
+  others: "txt",
+};
+
 function getExtension(fileName, extension) {
   if (extension) return extension.toLowerCase().replace(".", "");
   return fileName?.split(".").pop()?.toLowerCase() || "file";
 }
 
-function FileTypeIcon({ fileName, extension, size = "medium" }) {
-  const resolvedExtension = getExtension(fileName, extension);
+function FileTypeIcon({ fileName, extension, category, size = "medium" }) {
+  const resolvedExtension = getExtension(
+    fileName,
+    extension || CATEGORY_EXTENSIONS[category?.toLowerCase()],
+  );
   const [type, label] = FILE_TYPE_STYLES[resolvedExtension] || [
     "generic",
     resolvedExtension.slice(0, 4).toUpperCase(),
@@ -28,8 +39,8 @@ function FileTypeIcon({ fileName, extension, size = "medium" }) {
   return (
     <span
       className={`file-type-icon ${type} ${size}`}
-      title={`${resolvedExtension.toUpperCase()} file`}
-      aria-label={`${resolvedExtension.toUpperCase()} file`}
+      title={category ? `${category} category` : `${resolvedExtension.toUpperCase()} file`}
+      aria-label={category ? `${category} category` : `${resolvedExtension.toUpperCase()} file`}
     >
       {label}
     </span>

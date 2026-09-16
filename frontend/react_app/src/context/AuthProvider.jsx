@@ -64,6 +64,22 @@ function AuthProvider({ children }) {
     setCurrentUser(user);
   }
 
+  async function register(email, password) {
+    const response = await apiClient.post("/api/auth/register", {
+      email,
+      password,
+    });
+    const token = response.data.access_token;
+    const user = readUserFromToken(token);
+
+    if (!user) {
+      throw new Error("The server returned an invalid access token.");
+    }
+
+    localStorage.setItem("access_token", token);
+    setCurrentUser(user);
+  }
+
   function logout() {
     localStorage.removeItem("access_token");
     setCurrentUser(null);
@@ -75,6 +91,7 @@ function AuthProvider({ children }) {
       isAuthenticated: currentUser !== null,
       isCheckingAuthentication,
       login,
+      register,
       logout,
     }),
     [currentUser, isCheckingAuthentication],

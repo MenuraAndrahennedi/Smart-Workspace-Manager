@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.config import settings
 from backend.database.models import FileRecord
 from backend.database.repositories import create_file, get_file_by_id, query_files
-from backend.services.storage_service import delete_stored_file, resolve_managed_path
+from backend.services.storage_service import delete_stored_file, resolve_required_stored_file
 from backend.utils.file_utils import ensure_dated_directory, generate_safe_filename
 from backend.utils.time_utils import time_now
 
@@ -77,16 +77,7 @@ def _get_workbook_path(
     user_id: int,
 ) -> tuple[FileRecord, Path]:
     file_record = get_organized_xlsx_record(session, file_id, user_id)
-    try:
-        workbook_path = resolve_managed_path(
-            file_record.storage_path,
-            must_exist=True,
-            file_only=True,
-        )
-    except (FileNotFoundError, OSError, ValueError) as error:
-        raise XLSXConversionError(
-            "The selected workbook is unavailable in managed storage."
-        ) from error
+    workbook_path = resolve_required_stored_file(file_record.storage_path)
     if workbook_path.stat().st_size > settings.MAX_UPLOAD_SIZE_BYTES:
         raise XLSXConversionError(
             f"The workbook exceeds the {settings.MAX_UPLOAD_SIZE_MB} MB conversion limit."

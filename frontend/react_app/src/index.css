@@ -155,6 +155,17 @@ h2 {
   display: grid;
   gap: 3px;
 }
+.simple-list-row.category-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+.category-details {
+  text-transform: capitalize;
+}
+.category-size {
+  text-align: right;
+}
 .simple-list-row span {
   color: #777;
 }
@@ -265,6 +276,20 @@ tbody tr:last-child td {
   color: #444;
   font-size: 13px;
   font-weight: 600;
+}
+.form-help {
+  color: #737373;
+  font-size: 12px;
+}
+.auth-switch {
+  margin-top: 4px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: #555;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 input,
 select {
@@ -595,7 +620,7 @@ select:focus {
 }
 .library-layout {
   display: grid;
-  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
   align-items: start;
   gap: 18px;
 }

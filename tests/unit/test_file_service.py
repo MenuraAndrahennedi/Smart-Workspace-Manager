@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import backend.services.file_service as file_service
 from backend.services.storage_service import StagedFileDeletion
+from backend.services.storage_service import StoredFileUnavailableError
 from backend.services.file_service import (
     UploadValidationError,
     delete_actual_file,
@@ -25,7 +26,10 @@ def test_get_download_path_returns_managed_file_and_rejects_missing_file(
     assert get_download_path(managed_file) == managed_file.resolve()
     assert read_managed_file_bytes(managed_file) == b"content"
 
-    with pytest.raises(FileNotFoundError, match="does not exist"):
+    with pytest.raises(
+        StoredFileUnavailableError,
+        match="stored file is unavailable; please re-upload it",
+    ):
         get_download_path(temporary_data_root / "missing.csv")
 
 
@@ -36,7 +40,10 @@ def test_get_download_path_rejects_file_outside_data_root(
 ):
     outside_file = tmp_path / "outside.txt"
     outside_file.write_text("outside")
-    with pytest.raises(ValueError, match="not related to data root"):
+    with pytest.raises(
+        StoredFileUnavailableError,
+        match="stored file is unavailable; please re-upload it",
+    ):
         get_download_path(outside_file)
 
 
@@ -331,10 +338,13 @@ def test_upload_file_logs_cleanup_failure_and_reraises_database_error(monkeypatc
     assert "Failed to clean up partially uploaded file" in caplog.text
 
 
-def test_delete_actual_file_deletes_database_record_and_storage_file(monkeypatch, tmp_path):
-    stored_file = tmp_path / "report.csv"
+def test_delete_actual_file_deletes_database_record_and_storage_file(
+    monkeypatch,
+    temporary_data_root,
+):
+    stored_file = temporary_data_root / "report.csv"
     stored_file.write_text("name,score\nMenura,90")
-    staged_file = tmp_path / ".trash" / "report.csv"
+    staged_file = temporary_data_root / ".trash" / "report.csv"
     fake_session = SimpleNamespace(info={})
     calls = []
 
@@ -415,6 +425,46 @@ def test_delete_actual_file_allows_missing_storage_file_for_stale_record(monkeyp
     assert result["database_deleted"] is True
     assert result["storage_deleted"] is False
     assert result["report_files_deleted"] == 0
+    assert result["physical_file_was_missing"] is True
+
+
+def test_delete_actual_file_ignores_path_outside_current_data_root(
+    monkeypatch,
+    temporary_data_root,
+    tmp_path,
+):
+    outside_file = tmp_path / "old-data" / "legacy.csv"
+    outside_file.parent.mkdir()
+    outside_file.write_text("legacy")
+    fake_session = SimpleNamespace(info={})
+    staged_paths = []
+
+    monkeypatch.setattr(
+        file_service,
+        "get_file_by_id",
+        lambda session, file_id, user_id: SimpleNamespace(
+            original_name="legacy.csv",
+            storage_path=str(outside_file),
+        ),
+    )
+    monkeypatch.setattr(
+        file_service,
+        "delete_file",
+        lambda session, file_id, user_id: True,
+    )
+    monkeypatch.setattr(file_service, "get_report_storage_paths", lambda **kwargs: [])
+    monkeypatch.setattr(
+        file_service,
+        "stage_files_for_deletion",
+        lambda paths: staged_paths.extend(paths) or [],
+    )
+
+    result = delete_actual_file(fake_session, file_id=42, user_id=7)
+
+    assert staged_paths == []
+    assert outside_file.is_file()
+    assert result["database_deleted"] is True
+    assert result["storage_deleted"] is False
     assert result["physical_file_was_missing"] is True
 
 
