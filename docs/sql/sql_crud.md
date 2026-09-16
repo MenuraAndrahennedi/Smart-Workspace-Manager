@@ -6,7 +6,9 @@ Smart Workspace Manager uses SQLAlchemy ORM in the application. Raw SQL examples
 
 ## Core Tables and Relationships
 
-The Phase 1 metadata tables are:
+The Phase 2 metadata tables are:
+
+- `users`: login identity and Argon2 password hash.
 
 - `files`: one record for each managed source file.
 - `analysis_jobs`: one record for each recorded CSV analysis operation.
@@ -14,12 +16,13 @@ The Phase 1 metadata tables are:
 - `automation_logs`: persistent organization and workflow events.
 - `settings`: non-secret application settings.
 
-Both analysis jobs and reports belong directly to a file:
+Files belong to users. Analysis jobs and reports belong directly to a file:
 
 ```text
-files
-|-- analysis_jobs.file_id
-`-- reports.file_id
+users
+`-- files.user_id
+    |-- analysis_jobs.file_id
+    `-- reports.file_id
 ```
 
 There is no foreign-key relationship between `analysis_jobs` and `reports`.
@@ -52,12 +55,16 @@ CREATE TABLE reports (
 
 SQLite foreign-key enforcement is enabled for every application database connection.
 
+Azure SQL uses the equivalent identity, foreign-key, index, and cascade
+semantics through Alembic migrations.
+
 ## File CRUD
 
 ### Insert a File
 
 ```sql
 INSERT INTO files (
+    user_id,
     original_name,
     stored_name,
     extension,
@@ -69,6 +76,7 @@ INSERT INTO files (
     updated_at
 )
 VALUES (
+    :user_id,
     :original_name,
     :stored_name,
     :extension,
@@ -88,7 +96,8 @@ SQLAlchemy repository equivalent: `create_file()`.
 ```sql
 SELECT *
 FROM files
-WHERE id = :file_id;
+WHERE id = :file_id
+  AND user_id = :user_id;
 ```
 
 SQLAlchemy repository equivalent: `get_file_by_id()`.
@@ -98,6 +107,7 @@ SQLAlchemy repository equivalent: `get_file_by_id()`.
 ```sql
 SELECT *
 FROM files
+WHERE user_id = :user_id
 ORDER BY created_at DESC, id DESC;
 ```
 
@@ -113,7 +123,8 @@ SET
     category = :category,
     status = :status,
     updated_at = :updated_at
-WHERE id = :file_id;
+WHERE id = :file_id
+  AND user_id = :user_id;
 ```
 
 SQLAlchemy repository equivalents: `update_file()` and `update_file_location()`.
@@ -122,7 +133,8 @@ SQLAlchemy repository equivalents: `update_file()` and `update_file_location()`.
 
 ```sql
 DELETE FROM files
-WHERE id = :file_id;
+WHERE id = :file_id
+  AND user_id = :user_id;
 ```
 
 SQLAlchemy repository equivalent: `delete_file()`.
@@ -141,6 +153,7 @@ WHERE (
     OR original_name LIKE :search_pattern ESCAPE '\'
     OR stored_name LIKE :search_pattern ESCAPE '\'
 )
+AND user_id = :user_id
 AND category IN (:categories)
 AND status IN (:statuses)
 ORDER BY updated_at DESC, id DESC;
@@ -158,7 +171,8 @@ Actual `IN` parameters are expanded safely by SQLAlchemy rather than inserted in
 SELECT
     COUNT(id) AS total_files,
     COALESCE(SUM(size_bytes), 0) AS total_size_bytes
-FROM files;
+FROM files
+WHERE user_id = :user_id;
 ```
 
 SQLAlchemy repository equivalents: `count_files()` and `get_file_summary()`.
@@ -171,6 +185,7 @@ SELECT
     COUNT(id) AS file_count,
     COALESCE(SUM(size_bytes), 0) AS total_size_bytes
 FROM files
+WHERE user_id = :user_id
 GROUP BY category
 ORDER BY file_count DESC, category ASC;
 ```
@@ -184,6 +199,7 @@ SELECT
     status,
     COUNT(id) AS file_count
 FROM files
+WHERE user_id = :user_id
 GROUP BY status
 ORDER BY status ASC;
 ```
@@ -261,6 +277,25 @@ Database operations run inside a SQLAlchemy session transaction:
 - `rollback()` cancels database changes.
 
 Storage-changing services coordinate filesystem staging with the database transaction so failed deletions can restore moved files.
+
+For obsolete metadata, deletion may remove the owned database row when the
+physical file is already missing or its historical path is outside the current
+managed root. No external path is touched.
+
+## Ownership Join
+
+A report is authorized through its source file owner:
+
+```sql
+SELECT r.*
+FROM reports AS r
+JOIN files AS f ON f.id = r.file_id
+WHERE r.id = :report_id
+  AND f.user_id = :user_id;
+```
+
+SQLAlchemy equivalent: `get_report_by_id()` loads the report and checks
+`report.file.user_id`. Analysis-job authorization follows the same relationship.
 
 ## Verification Scripts
 

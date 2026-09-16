@@ -1,382 +1,285 @@
 # Smart Workspace Manager
 
-Smart Workspace Manager is a Streamlit application for organizing files and working with spreadsheet datasets. It combines file storage, SQLite metadata, XLSX-to-CSV conversion, CSV analysis and cleaning, chart creation, and HTML/PDF reporting in one service-oriented Python project.
+Smart Workspace Manager is a full-stack file and spreadsheet workspace built with React, FastAPI, SQLAlchemy, and Azure SQL. Users can create an account, manage their own files, analyze and clean CSV data, convert XLSX worksheets, create charts, and generate downloadable HTML/PDF reports.
 
-Phase 1 is deployed to Azure App Service and continuously deployed from GitHub Actions. The repository includes the complete file-management and spreadsheet workflow through report generation, together with service-layer enforcement, logging, controlled errors, database/storage integration tests, and clean-environment release verification.
+The active Phase 2 application is deployed through GitHub Actions:
+
+| Component | Deployment |
+| --- | --- |
+| React frontend | [Azure Static Web Apps](https://mango-tree-09402d200.1.azurestaticapps.net) |
+| FastAPI backend | [Azure App Service](https://smart-workspace-manager-phase1-f5b9emgdcecsddeg.centralindia-01.azurewebsites.net) |
+| Health check | [`/health`](https://smart-workspace-manager-phase1-f5b9emgdcecsddeg.centralindia-01.azurewebsites.net/health) |
+| Interactive API docs | [`/docs`](https://smart-workspace-manager-phase1-f5b9emgdcecsddeg.centralindia-01.azurewebsites.net/docs) |
+| Metadata database | Azure SQL Database |
+
+The former Streamlit interface is preserved under `frontend/legacy_streamlit/` as a separately installed reference client. React is the active frontend.
 
 ## Features
 
-### File management
-
-- Accept supported files up to the configured upload limit.
-- Sanitize names and allocate unique stored filenames.
-- Organize uploads by category and year/month.
-- Search and filter files by name, category, and status.
-- Download or delete managed files.
-- Keep file deletion consistent with database commits and rollbacks.
-- Record organization successes and failures in automation logs.
-
-Supported extensions include CSV/Excel, documents, PDFs, images, audio, video, archives, presentations, structured data, and common source-code files. Files outside the main organizer categories are stored under `processed/others/`.
-
-### CSV analysis
-
-- Load UTF-8 and UTF-8 BOM CSV files within size, row, and column limits.
-- Show a preview, dimensions, columns, pandas data types, missing-value counts, duplicate-row counts, and descriptive statistics.
-- Apply numeric and text filters without changing the source CSV.
-- Record analysis jobs with pending, completed, or failed status.
-
-### CSV cleaning
-
-- Remove duplicates using all columns or selected columns.
-- Fill numeric nulls with the mean, median, or a constant.
-- Fill text nulls with a chosen value.
-- Drop rows containing nulls in all or selected columns.
-- Combine operations in a predictable order and preview from the original data each time.
-- Export independent CSV and Excel copies without modifying the organized source.
-- Register cleaned CSV and XLSX exports as organized files so they are available to downstream tools.
-
-### XLSX to CSV
-
-- Select an organized XLSX workbook and one of its worksheets.
-- Preview the worksheet before conversion.
-- Enforce the configured workbook size, row, and column limits.
-- Save each conversion as a UTF-8 BOM CSV under the dated spreadsheet directory.
-- Register the generated CSV as an organized file for immediate use in the Analyzer, Cleaner, and Report pages.
-- Download the latest converted CSV without changing the source workbook.
-
-### Charts and reports
-
-- Classify numeric, categorical, and existing pandas datetime columns.
-- Build histogram, frequency/aggregated bar, line, and scatter charts.
-- Validate columns, aggregations, row limits, and bar-category limits.
-- Add, preview, and remove up to the configured number of report charts.
-- Generate HTML and PDF outputs while keeping the chart list available for another report.
-- Download the latest generated HTML and PDF files.
-- Store separate report records for the HTML and PDF outputs.
-
-## Application Pages
-
-| Page             | Purpose                                                              |
-| ---------------- | -------------------------------------------------------------------- |
-| Dashboard        | View totals, category/status summaries, and recent files.            |
-| File Upload      | Validate, upload, and organize a file.                               |
-| File Library     | Search, filter, download, and delete managed files.                  |
-| CSV Analyzer     | Inspect and filter an organized CSV while recording an analysis job. |
-| CSV Cleaner      | Preview cleaning operations and export CSV/Excel results.            |
-| Generate Reports | Configure charts and generate downloadable HTML/PDF reports.         |
-| XLSX to CSV      | Preview and convert one XLSX worksheet into an organized CSV.        |
-
-The Streamlit pages are UI orchestration only. They call backend services rather than repositories or the filesystem directly.
+- Email/password registration and JWT login.
+- Per-user ownership checks for files, analyses, cleaned outputs, and reports.
+- Validated single-file uploads with safe generated names and configurable limits.
+- Dashboard totals, category summaries, recent files, downloads, and deletion.
+- Searchable and filterable file library with generated-report downloads.
+- CSV previews, data types, missing values, duplicates, statistics, and filters.
+- Duplicate removal and controlled numeric/text missing-value operations.
+- Independent cleaned CSV and XLSX outputs; source files remain unchanged.
+- XLSX worksheet preview and conversion to managed UTF-8 BOM CSV files.
+- Bar, histogram, line, and scatter charts with configurable safety limits.
+- Reports containing up to ten charts with HTML and PDF downloads.
+- Clear stale-storage handling: metadata can be removed even when an old physical file is unavailable.
+- Automated backend tests/deployment and frontend lint/build/deployment from `main`.
 
 ## Architecture
 
-```text
-Streamlit pages
-      |
-Backend services
-      |
-Repositories + SQLAlchemy models
-      |
-SQLite database + managed local storage
+```mermaid
+flowchart LR
+    Browser[React + Vite\nAzure Static Web Apps]
+    API[FastAPI + Gunicorn\nAzure App Service F1]
+    Services[Reusable Python services]
+    DB[(Azure SQL\nSQLAlchemy + Alembic)]
+    Storage[Managed filesystem\n/home/data]
+
+    Browser -->|HTTPS + JWT| API
+    API --> Services
+    Services --> DB
+    Services --> Storage
 ```
 
-The main persisted relationships are:
+FastAPI routes validate HTTP input and delegate to the same backend services used by the legacy client. Services own workflows and storage coordination; repositories own SQLAlchemy database access. Protected requests pass the authenticated user ID through every layer so repository queries remain user-scoped.
 
-```text
-FileRecord
-|-- AnalysisJob
-`-- Report
-```
+See [Architecture and security](docs/architecture.md) for the detailed component, ownership, storage, and browser-flow description.
 
-An analysis job records a CSV analysis operation. A report records one generated output file. Reports are linked directly to their source file and are not linked to analysis jobs. Deleting a file record cascades to its analysis jobs and reports; the file service coordinates removal of the related physical files.
+## Technology
 
-Additional independent tables store automation logs and non-secret application settings.
+- Python 3.12, FastAPI, Gunicorn, SQLAlchemy, Alembic
+- Azure SQL through `pyodbc` and Microsoft ODBC Driver 18
+- pandas, openpyxl, Plotly, and Matplotlib
+- React 19, Vite 8, React Router, Axios
+- pytest and Oxlint
+- Azure App Service F1 and Azure Static Web Apps Free
+- GitHub Actions with Azure OIDC for the backend and a Static Web Apps deployment token for the frontend
 
-## Project Structure
+## Repository Layout
 
 ```text
 backend/
-  config/          Environment settings
-  database/        Engine, sessions, models, and repositories
-  services/        Application workflows and validation
-  utils/           File, path, time, validation, and logging helpers
+  config/                  Environment validation
+  database/                Models, repositories, sessions, Alembic migrations
+  dependencies/            FastAPI database and authentication dependencies
+  middleware/              Consistent API exception responses
+  routes/                  HTTP endpoints
+  schemas/                 Pydantic request/response contracts
+  services/                Reusable application workflows
+  utils/                   Validation, paths, logging, time, and formatting
 
 frontend/
-  streamlit_app.py Streamlit entry point
-  ui_helpers.py    Shared page presentation/error helpers
-  pages/           Seven numbered workflow pages
-
-scripts/
-  init_db.py       Create missing database tables
-  migrate_database.py
-                   Back up and upgrade an older SQLite database
-  sql_verifications/
-                   Isolated ORM and raw-SQL verification scripts
+  react_app/               Active React/Vite frontend
+  legacy_streamlit/        Preserved authenticated Streamlit client
 
 tests/
-  unit/            Utilities, services, reports, charts, and UI boundaries
-  integration/     Database, storage, migration, and workflow behavior
+  unit/                    Service and utility tests
+  api/                     FastAPI contract/authentication tests
+  integration/             Database, ownership, storage, and workflow tests
 
-data/              Local runtime state; ignored by Git
-docs/              Work plan, project notes, and SQL documentation
-.github/workflows/ Azure deployment workflow
+docs/                      Architecture, API, SQL, Azure, CI/CD, and work-plan docs
+.github/workflows/         Backend and frontend production workflows
+data/                      Ignored local runtime files
 ```
 
-## Requirements
+## Local Setup
 
-- Python 3.12 (project target: 3.12.0; Azure runtime observed: 3.12.13)
-- PowerShell for the commands shown below
-- Local filesystem access
+### Prerequisites
 
-The application uses Streamlit, SQLAlchemy, pandas, Plotly, Matplotlib, and openpyxl. Runtime dependencies are pinned in `requirements.txt`; test dependencies are pinned in `requirements-dev.txt`.
+- Python 3.12
+- Node.js 24 and npm
+- Git
+- Microsoft ODBC Driver 18 only when connecting locally to Azure SQL
 
-## Quick Start
+### 1. Backend
 
-Create and activate a virtual environment:
+From the repository root:
 
 ```powershell
-python --version
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
-
-Install development dependencies. This includes all application dependencies:
-
-```powershell
 python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt
-```
-
-For an application-only environment, install `requirements.txt` instead:
-
-```powershell
-python -m pip install -r requirements.txt
-```
-
-Create the local configuration and database:
-
-```powershell
 Copy-Item .env.example .env
-python scripts/init_db.py
 ```
 
-Start the application:
+The example configuration uses SQLite and local storage. Generate a private JWT secret with at least 32 characters and replace the placeholder in `.env`.
+
+Apply the Alembic migrations:
 
 ```powershell
-python -m streamlit run frontend/streamlit_app.py
+.venv\Scripts\python.exe -m alembic -c backend\database\migrations\alembic.ini upgrade head
 ```
 
-Open [http://localhost:8501](http://localhost:8501). Streamlit discovers the numbered pages under `frontend/pages/` automatically.
+Start FastAPI:
 
-## Azure Deployment
-
-Phase 1 was deployed and verified on August 9, 2026.
-
-| Resource | Configuration |
-| --- | --- |
-| Subscription | Azure for Students |
-| Resource group | `rg-smart-workspace-manager` |
-| Region | Central India |
-| App Service | `smart-workspace-manager-phase1` |
-| App Service plan | `asp-smart-workspace-manager-f1` |
-| Pricing tier | Free F1 |
-| Operating system | Linux |
-| Runtime | Python 3.12, Streamlit 1.59.2 |
-| Application port | `8000` |
-| Managed identity | `oidc-msi-82b6` |
-
-Azure starts the application with:
-
-```bash
-python scripts/init_db.py && python -m streamlit run frontend/streamlit_app.py --server.address 0.0.0.0 --server.port 8000 --server.headless true
+```powershell
+.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --port 8000
 ```
 
-The deployment stores persistent application data under `/home/data`:
+Verify [http://localhost:8000/health](http://localhost:8000/health) and open [http://localhost:8000/docs](http://localhost:8000/docs).
 
-```text
-DATA_ROOT=/home/data
-DATABASE_URL=sqlite:////home/data/smart_workspace.db
-STORAGE_PROVIDER=local
-SCM_DO_BUILD_DURING_DEPLOYMENT=1
+### 2. React frontend
+
+In a second PowerShell terminal:
+
+```powershell
+cd frontend\react_app
+Copy-Item .env.example .env
+npm install
+npm run dev
 ```
 
-Azure App Service also defines `LOG_LEVEL`, `MAX_BAR_CATEGORIES`, `MAX_CHART_ROWS`, `MAX_CSV_ANALYSIS_SIZE_MB`, `MAX_CSV_COLUMNS`, `MAX_CSV_ROWS`, `MAX_FILENAME_ATTEMPTS`, `MAX_REPORT_CHARTS`, `MAX_UPLOAD_SIZE_MB`, `PYTHONUNBUFFERED`, and `SECRET_KEY`. `SECRET_KEY` is configured only as an Azure application setting and must never be committed.
+Open [http://localhost:5173](http://localhost:5173), create an account, and sign in. The frontend environment file must contain:
 
-### GitHub Actions Deployment
+```dotenv
+VITE_API_BASE_URL=http://localhost:8000
+```
 
-Pushes to `phase-1-azure-deployment` automatically run [`.github/workflows/deploy-azure.yml`](.github/workflows/deploy-azure.yml). The workflow signs in through Azure OIDC using a federated credential and deploys the repository to App Service; it does not use a publish profile or long-lived Azure password.
-
-The workflow requires these GitHub repository secrets:
-
-- `AZURE_CLIENT_ID`
-- `AZURE_TENANT_ID`
-- `AZURE_SUBSCRIPTION_ID`
-
-Deployment history is available in the repository's Actions page. Azure Deployment Center may show `Deployment provider: None` or `No deployments found`; this is expected because deployment is controlled directly by GitHub Actions.
+The root `.env` configures Python; `frontend/react_app/.env` configures Vite. Neither private file is committed.
 
 ## Configuration
 
-The application loads `.env` from the project root. The included `.env.example` is suitable for local development.
+| Variable | Purpose | Local example |
+| --- | --- | --- |
+| `DATABASE_URL` | SQLite or Azure SQL SQLAlchemy URL | `sqlite:///./data/smart_workspace.db` |
+| `STORAGE_PROVIDER` | Storage implementation | `local` |
+| `DATA_ROOT` | Managed file root | `./data` |
+| `SECRET_KEY` | JWT signing key, minimum 32 characters | private value |
+| `ALGORITHM` | Accepted JWT algorithm | `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT lifetime, maximum 1440 | `30` |
+| `FRONTEND_ORIGINS` | Comma-separated exact CORS origins | local and deployed frontend URLs |
+| `MAX_UPLOAD_SIZE_MB` | Maximum upload size, up to 10 MB | `10` |
+| `MAX_FILENAME_ATTEMPTS` | Unique-name retries | `3` |
+| `MAX_CSV_ANALYSIS_SIZE_MB` | CSV analysis limit | `10` |
+| `MAX_CSV_ROWS` | Maximum loaded rows | `50000` |
+| `MAX_CSV_COLUMNS` | Maximum loaded columns | `200` |
+| `MAX_CHART_ROWS` | Maximum raw rows used by a chart | `5000` |
+| `MAX_BAR_CATEGORIES` | Maximum bar categories | `30` |
+| `MAX_REPORT_CHARTS` | Maximum charts in one report | `10` |
+| `LOG_LEVEL` | Application log level | `INFO` |
 
-| Variable                | Purpose                                                               | Default example                       |
-| ----------------------- | --------------------------------------------------------------------- | ------------------------------------- |
-| `DATABASE_URL`          | SQLite database URL                                                   | `sqlite:///./data/smart_workspace.db` |
-| `STORAGE_PROVIDER`      | Storage implementation; currently only local                          | `local`                               |
-| `DATA_ROOT`             | Root for managed runtime files                                        | `./data`                              |
-| `MAX_UPLOAD_SIZE_MB`    | Upload and CSV analysis size limit; maximum accepted setting is 10 MB | `10`                                  |
-| `MAX_FILENAME_ATTEMPTS` | Attempts to allocate a unique stored name                             | `3`                                   |
-| `LOG_LEVEL`             | Root application log level                                            | `INFO`                                |
-| `MAX_CSV_ROWS`          | Maximum CSV rows loaded                                               | `50000`                               |
-| `MAX_CSV_COLUMNS`       | Maximum CSV columns loaded                                            | `200`                                 |
-| `MAX_CHART_ROWS`        | Maximum raw rows used by a chart                                      | `5000`                                |
-| `MAX_BAR_CATEGORIES`    | Maximum categories in a bar chart                                     | `30`                                  |
-| `MAX_REPORT_CHARTS`     | Maximum charts in one report                                          | `10`                                  |
+Azure uses `DATA_ROOT=/home/data`. Production values and secrets belong in App Service settings, GitHub Secrets, or GitHub Variables—not source control.
 
-`SECRET_KEY` is reserved for a future authentication phase and is not used by Phase 1. It must still remain secret. `MAX_CSV_ANALYSIS_SIZE_MB` remains in the example file for compatibility, but the current CSV size limit follows `MAX_UPLOAD_SIZE_MB`.
+## Authentication and Authorization
 
-Do not commit `.env`, runtime databases, uploaded files, or generated reports.
+`POST /api/auth/register` accepts only an email and password. Passwords are hashed with pwdlib's recommended Argon2 configuration. Login uses OAuth2 password-form fields and returns an HS256 JWT.
 
-## Database
+Public endpoints:
 
-Create all missing tables in a new database:
+- `GET /health`
+- `GET /api/settings/public`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
 
-```powershell
-python scripts/init_db.py
-```
+All dashboard, file, analysis, cleaning, report, and XLSX endpoints require `Authorization: Bearer <token>`. Direct resource access verifies ownership and returns `403` when another user owns the resource. See [API and authentication](docs/api.md).
 
-For a database created by an older version of the project, run the migration once:
+## Database and Storage
 
-```powershell
-python scripts/migrate_database.py
-```
-
-The migration creates a timestamped database backup, upgrades analysis/report relationships, enables and verifies foreign-key integrity, normalizes legacy failure statuses, removes records for missing source files, and organizes valid files still left in uploads.
-
-The database contains these tables:
-
-| Table             | Purpose                                    |
-| ----------------- | ------------------------------------------ |
-| `files`           | Managed file metadata and storage location |
-| `analysis_jobs`   | Recorded CSV analysis operations           |
-| `reports`         | Generated HTML or PDF report metadata      |
-| `automation_logs` | Durable organization activity records      |
-| `settings`        | Non-secret application settings            |
-
-## Runtime Storage
-
-All managed paths are resolved beneath `DATA_ROOT`:
-
-```text
-data/
-  backups/                    Migration backups
-  logs/smart_workspace.log   Rotating application log
-  processed/
-    spreadsheets/YYYY/MM/    Organized spreadsheets and converted CSV files
-    images/YYYY/MM/           Organized images
-    documents/YYYY/MM/        Documents and presentations
-    pdf/YYYY/MM/              Organized PDF files
-    others/YYYY/MM/           Other supported file types
-    cleaned/
-      csv/YYYY/MM/            Cleaned CSV exports
-      excel/YYYY/MM/          Cleaned Excel exports
-  reports/
-    html/YYYY/MM/             Interactive HTML reports
-    pdf/YYYY/MM/              Static PDF reports
-  uploads/                    Temporary upload location
-  smart_workspace.db         Default SQLite database
-```
-
-Deletion first stages physical files below an internal `.trash` directory. Files are finalized after a successful database commit or restored after a rollback. Path validation prevents reads, moves, downloads, and deletes outside the configured data root.
-
-## Logging and Errors
-
-Application logs are written to stderr and `data/logs/smart_workspace.log` using UTC timestamps. The file rotates at 5 MB and retains three backups. Supported `LOG_LEVEL` values are `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`, and `NOTSET`.
-
-Services raise controlled domain errors for expected validation failures. Streamlit pages show concise user-facing messages while unexpected exceptions are logged with traceback details instead of exposing internal paths or stack traces in the UI.
-
-## Tests
-
-Run the complete suite:
+Alembic is the schema authority. The current migration head is `fd3f2d7e4c91`, containing users and file ownership on top of the baseline schema.
 
 ```powershell
-python -m pytest -q
+.venv\Scripts\python.exe -m alembic -c backend\database\migrations\alembic.ini current
+.venv\Scripts\python.exe -m alembic -c backend\database\migrations\alembic.ini upgrade head
 ```
 
-Run one test group:
+Azure SQL stores metadata; managed files remain on the App Service filesystem under `/home/data`. A database row does not contain the file bytes. If historical metadata points to a file that is no longer available, file-dependent endpoints return `409` with a re-upload message. Deleting that obsolete record is allowed, but the application never follows or deletes an untrusted path outside `DATA_ROOT`.
+
+See [Azure SQL setup](docs/azure_sql_setup.md) and [SQL/SQLAlchemy equivalents](docs/sql/sql_crud.md).
+
+## Tests and Build
+
+Run the final backend regression suite:
 
 ```powershell
-python -m pytest tests/unit -q
-python -m pytest tests/integration -q
+.venv\Scripts\python.exe -m pip check
+.venv\Scripts\python.exe -m pytest tests\unit tests\api tests\integration -q
 ```
 
-Optional coverage report:
+Run the frontend gates:
 
 ```powershell
-python -m pytest --cov=backend --cov=frontend --cov-report=term-missing
+cd frontend\react_app
+npm ci
+npm run lint
+npm run build
 ```
 
-The current verified baseline is **186 passing tests**. Coverage includes configuration and path utilities, repository CRUD and filters, upload/organization workflows, database cascades and rollback behavior, XLSX worksheet conversion and cleanup, CSV analysis and cleaning, every chart type, report generation and cleanup, logging, user-facing helpers, and the Streamlit service-layer boundary.
+The Day 21 verified backend baseline is **265 passing tests**. The production frontend build also passes. Oxlint currently reports non-blocking `set-state-in-effect` warnings for initial data/session loading, and Vite reports a non-blocking bundle-size warning caused mainly by chart rendering dependencies.
 
-The integration tests use temporary databases and data roots; they do not use the real application database or managed files.
+## Deployment and CI/CD
 
-## Release Verification
+Pushes to `main` run:
 
-Before a release, verify dependency reproducibility in a temporary Python 3.12 environment:
+- [Backend workflow](.github/workflows/deploy-azure.yml): install Python dependencies, run all backend tests, authenticate to Azure using OIDC, and deploy FastAPI to App Service.
+- [Frontend workflow](.github/workflows/deploy-frontend.yml): install npm dependencies, lint, validate the production API URL, build React, and deploy `dist/` to Static Web Apps.
+
+The production App Service command is:
+
+```bash
+gunicorn -c gunicorn.conf.py backend.main:app
+```
+
+See [Azure deployment](docs/azure_deployment.md) and [CI/CD reference](docs/ci_cd.md) for resources, configuration, secret names, smoke tests, and troubleshooting.
+
+## Legacy Streamlit Client
+
+The Streamlit client is preserved for backward reference and service-parity demonstrations. It uses the same database, authentication service, ownership checks, and backend workflows.
 
 ```powershell
-python -m venv .venv-release-test
-.\.venv-release-test\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements-dev.txt
-python -m pip check
-python -m pytest -q
-python -m streamlit run frontend/streamlit_app.py
+.venv\Scripts\python.exe -m pip install -r requirements-streamlit.txt
+.venv\Scripts\python.exe -m streamlit run frontend\legacy_streamlit\streamlit_app.py
 ```
 
-After the checks finish, deactivate and remove only that temporary environment:
-
-```powershell
-deactivate
-Remove-Item -LiteralPath .venv-release-test -Recurse -Force
-```
-
-This clean-environment check was completed successfully with the current pinned requirements.
-
-## SQL Verification
-
-The learning-oriented SQL scripts run against isolated databases:
-
-```powershell
-python scripts/sql_verifications/sql_crud_verification.py
-python scripts/sql_verifications/sql_query_verification.py
-```
-
-See [SQL and SQLAlchemy notes](docs/sql/sql_crud.md) for the corresponding examples and explanations.
+It is not deployed and receives no further UI development. React is the supported interface.
 
 ## Known Limitations
 
-- Storage uses the local filesystem. Azure persists it under `/home/data`, which is suitable for this single-instance demonstration but not for horizontal scaling.
-- There is no authentication, authorization, or per-user ownership.
-- CSV date strings are not parsed automatically; line charts recognize numeric columns and columns already typed as pandas datetime.
-- XLSX conversion supports `.xlsx` workbooks and converts one worksheet at a time.
-- HTML reports load Plotly JavaScript from a CDN, so interactive charts need internet access when the saved report is opened.
-- PDF report charts are static.
-- Large CSV and chart workloads are intentionally restricted by configuration limits.
-- The Free F1 plan has no Always On support. Its limits include 60 CPU minutes per day, a 3-minute short CPU quota, 1,024 MiB memory, and 165 MiB outbound data. Azure may temporarily stop the application when a quota is exceeded.
-- SQLite must be replaced by Azure SQL or PostgreSQL before multi-instance or production use.
-- The API, React client, and Azure SQL are future work.
+- App Service F1 and Static Web Apps Free are demonstration tiers without a production SLA.
+- Files use one App Service filesystem; the application is not designed for horizontal scaling.
+- Redeployments preserve `/home`, but database rows created from another machine cannot provide those local file bytes; re-upload is required.
+- Public registration has no email verification, password reset, roles, MFA, or rate limiting.
+- Access tokens are kept in browser local storage and expire after the configured lifetime.
+- XLSX conversion supports `.xlsx` and one worksheet per conversion.
+- CSV parsing expects UTF-8/UTF-8 BOM and enforces configured size, row, and column limits.
+- HTML reports load Plotly from a CDN; PDF charts are static.
+- Chart dependencies produce a large frontend bundle; code splitting is future optimization.
+- Background jobs, Blob Storage, Docker, and multi-instance production hosting are outside this project scope.
 
-## Project Status
+## Final Smoke Test
 
-- Core file, database, organization, dashboard, library, XLSX conversion, CSV analysis, cleaning, visualization, and reporting workflows are implemented.
-- Day 13-style hardening is present: pages call services, reusable errors are controlled, logging is configured, critical storage/database paths have integration tests, and a clean dependency installation has been verified.
-- Phase 1 is deployed and verified on Azure App Service through GitHub Actions and OIDC authentication.
-- FastAPI, React, authentication, authorization, cloud storage, and Azure SQL remain Phase 2 plans.
+Before tagging a release, verify in the deployed React application:
+
+1. Register, sign in, sign out, and reject an unauthenticated protected route.
+2. Load the dashboard and category/recent-file sections.
+3. Upload, list, download, and delete a file.
+4. Verify a second user cannot access the first user's resource.
+5. Analyze and filter a CSV.
+6. Preview cleaning, save outputs, and download CSV/XLSX.
+7. Preview charts and generate/download HTML/PDF reports.
+8. Convert and download one XLSX worksheet.
+9. Refresh a nested React route directly.
+10. Confirm both GitHub Actions workflows and Azure cost/quota safeguards.
 
 ## Documentation
 
+- [Documentation index](docs/README.md)
+- [Architecture and security](docs/architecture.md)
+- [API and authentication](docs/api.md)
+- [Azure deployment](docs/azure_deployment.md)
+- [Azure SQL setup and SQLite fallback](docs/azure_sql_setup.md)
+- [CI/CD workflows](docs/ci_cd.md)
+- [React and browser concepts](docs/react_concepts.md)
+- [SQL and SQLAlchemy equivalents](docs/sql/sql_crud.md)
 - [Complete work plan](docs/UPDATED_Smart_Workspace_Manager_Complete_Work_Plan.pdf)
 - [Project documentation](docs/UPDATED_Smart_Workspace_Manager_Project_Document.pdf)
 - [Folder structure documentation](docs/Smart_Workspace_Manager_Folder_Structure_Documentation.pdf)
-- [Azure SQL setup and SQLite fallback](docs/azure_sql_setup.md)
-- [SQL and SQLAlchemy notes](docs/sql/sql_crud.md)
+
+## Release Status
+
+Phase 2 implementation, cloud deployment, CI/CD verification, smoke testing, and final documentation are complete. The remaining release steps are the final clean-environment acceptance test, `phase-2` tag, and demonstration.

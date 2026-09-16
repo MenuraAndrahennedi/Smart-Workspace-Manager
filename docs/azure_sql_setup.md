@@ -21,6 +21,10 @@ The server firewall must allow the IP addresses of approved clients and deployed
 applications. Do not enable broad firewall access unless the deployment requires
 it.
 
+The deployed App Service outbound IP addresses are registered as narrowly scoped
+SQL firewall rules. Recheck them if the App Service networking blade reports a
+different outbound-IP set after a resource or plan change.
+
 ## Required local components
 
 - Python 3.12 and the project virtual environment
@@ -106,9 +110,21 @@ Day 17 verification confirmed that Azure SQL reached revision
 source files. The migration-created `legacy@local.invalid` row provides an owner
 for pre-ownership data; it is not a normal application login.
 
-At verification time, Azure contained the legacy user and no application file,
-analysis, report, automation-log, or setting records. Ownership and child-record
-orphan checks returned no invalid records.
+The original Day 17 verification found no ownership or child-record orphans.
+The active Phase 2 application now permits users to register and stores their
+owned metadata in this database.
+
+Azure SQL stores file metadata, not file bytes. A local backend and the deployed
+backend can therefore see the same database row while using different physical
+storage roots. If an older row points to a local Windows path or a missing Azure
+file, file-dependent endpoints return `409` with:
+
+```text
+The stored file is unavailable; please re-upload it.
+```
+
+The React Library or Dashboard can delete that obsolete metadata safely. The
+deletion service never follows or deletes a path outside the active `DATA_ROOT`.
 
 ## Cost safeguards
 
@@ -165,3 +181,7 @@ failover.
 - **Database unavailable after exhausting free usage:** with paid overage
   disabled, wait for the monthly free allowance to reset.
 
+## Microsoft References
+
+- [Azure SQL Database free offer and current monthly allowances](https://learn.microsoft.com/azure/azure-sql/database/free-offer)
+- [Configure Azure SQL server firewall rules](https://learn.microsoft.com/azure/azure-sql/database/firewall-configure)

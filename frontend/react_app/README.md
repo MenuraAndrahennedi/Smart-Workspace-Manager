@@ -1,16 +1,34 @@
-# React + Vite
+# Smart Workspace Manager React Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+This is the active React 19/Vite frontend for Smart Workspace Manager. It calls the separately deployed FastAPI backend and provides registration/login, dashboard, upload, library, CSV analysis/cleaning, charts/reports, and XLSX conversion.
 
-Currently, two official plugins are available:
+## Local development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```powershell
+Copy-Item .env.example .env
+npm install
+npm run dev
+```
 
-## React Compiler
+`frontend/react_app/.env` must define:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```dotenv
+VITE_API_BASE_URL=http://localhost:8000
+```
 
-## Expanding the Oxlint configuration
+The Python backend must also allow `http://localhost:5173` through its root `FRONTEND_ORIGINS` setting.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Commands
+
+```powershell
+npm run dev
+npm run lint
+npm run build
+npm run preview
+```
+
+## Production
+
+GitHub Actions reads `VITE_API_BASE_URL` from a repository variable during the build and deploys `dist/` to Azure Static Web Apps. The API URL is compiled into the bundle; changing it requires another build.
+
+See the root [README](../../README.md), [React concepts](../../docs/react_concepts.md), and [CI/CD guide](../../docs/ci_cd.md) for the full project context.
