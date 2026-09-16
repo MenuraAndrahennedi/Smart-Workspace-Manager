@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from backend.database.repositories import create_file, read_file_by_id
+from backend.database.repositories import create_file, get_file_by_id
 from backend.services.analysis_service import get_analyzable_csv_files
 from backend.services.cleaning_service import (
     CleaningOptions,
@@ -29,7 +29,7 @@ def cleaning_data_root(temporary_data_root):
 
 
 @pytest.fixture
-def organized_csv_file(test_session, cleaning_data_root):
+def organized_csv_file(test_session, cleaning_data_root, test_user):
     csv_path = cleaning_data_root / "sample.csv"
     csv_path.write_text(
         "name,age,city\n"
@@ -42,6 +42,7 @@ def organized_csv_file(test_session, cleaning_data_root):
 
     return create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="sample.csv",
         stored_name="sample.csv",
         extension="csv",
@@ -102,8 +103,13 @@ def test_remove_duplicates():
 def test_load_cleaning_source_and_detect_column_options(
     test_session,
     organized_csv_file,
+    test_user,
 ):
-    dataframe = load_cleaning_source(test_session, organized_csv_file.id)
+    dataframe = load_cleaning_source(
+        test_session,
+        organized_csv_file.id,
+        test_user.id,
+    )
     options = get_cleaning_column_options(dataframe)
 
     assert dataframe.shape == (4, 3)
@@ -306,7 +312,11 @@ def test_fill_text_missing_values():
     assert fill_text_results.values_filled == 1
 
 
-def test_preview_cleaning_applies_selected_actions(test_session, organized_csv_file):
+def test_preview_cleaning_applies_selected_actions(
+    test_session,
+    organized_csv_file,
+    test_user,
+):
     options = CleaningOptions(
         remove_duplicates=True,
         numeric_fill_column="age",
@@ -318,6 +328,7 @@ def test_preview_cleaning_applies_selected_actions(test_session, organized_csv_f
     result = preview_cleaning(
         session=test_session,
         file_id=organized_csv_file.id,
+        user_id=test_user.id,
         cleaning_options=options,
     )
 
@@ -341,6 +352,7 @@ def test_preview_cleaning_applies_selected_actions(test_session, organized_csv_f
 def test_each_cleaning_preview_reloads_the_original_csv(
     test_session,
     organized_csv_file,
+    test_user,
 ):
     source_path = Path(organized_csv_file.storage_path)
     original_bytes = source_path.read_bytes()
@@ -348,6 +360,7 @@ def test_each_cleaning_preview_reloads_the_original_csv(
     first_preview = preview_cleaning(
         session=test_session,
         file_id=organized_csv_file.id,
+        user_id=test_user.id,
         cleaning_options=CleaningOptions(remove_duplicates=True),
     )
     first_preview.cleaned_dataframe.loc[0, "name"] = "Changed in memory"
@@ -355,6 +368,7 @@ def test_each_cleaning_preview_reloads_the_original_csv(
     second_preview = preview_cleaning(
         session=test_session,
         file_id=organized_csv_file.id,
+        user_id=test_user.id,
         cleaning_options=CleaningOptions(),
     )
 
@@ -366,6 +380,7 @@ def test_each_cleaning_preview_reloads_the_original_csv(
 def test_save_cleaning_result_creates_csv_and_excel_files(
     test_session,
     organized_csv_file,
+    test_user,
 ):
     source_path = Path(organized_csv_file.storage_path)
     original_bytes = source_path.read_bytes()
@@ -380,6 +395,7 @@ def test_save_cleaning_result_creates_csv_and_excel_files(
     result = save_cleaning_result(
         session=test_session,
         file_id=organized_csv_file.id,
+        user_id=test_user.id,
         cleaned_dataframe=cleaned_df,
         date_value=datetime(2026, 7, 31, tzinfo=timezone.utc),
     )
@@ -393,8 +409,8 @@ def test_save_cleaning_result_creates_csv_and_excel_files(
     assert result.row_count == 2
     assert result.column_count == 3
 
-    csv_record = read_file_by_id(test_session, result.csv_file_id)
-    excel_record = read_file_by_id(test_session, result.excel_file_id)
+    csv_record = get_file_by_id(test_session, result.csv_file_id, test_user.id)
+    excel_record = get_file_by_id(test_session, result.excel_file_id, test_user.id)
     assert csv_record.storage_path == str(result.csv_path)
     assert csv_record.extension == "csv"
     assert csv_record.status == "organized"
@@ -404,11 +420,11 @@ def test_save_cleaning_result_creates_csv_and_excel_files(
 
     analyzable_ids = {
         file_record.id
-        for file_record in get_analyzable_csv_files(test_session)
+        for file_record in get_analyzable_csv_files(test_session, test_user.id)
     }
     convertible_ids = {
         file_record.id
-        for file_record in get_convertible_xlsx_files(test_session)
+        for file_record in get_convertible_xlsx_files(test_session, test_user.id)
     }
     assert result.csv_file_id in analyzable_ids
     assert result.excel_file_id in convertible_ids
@@ -421,6 +437,7 @@ def test_save_cleaning_result_creates_csv_and_excel_files(
 def test_save_cleaning_result_removes_partial_outputs_after_failure(
     test_session,
     organized_csv_file,
+    test_user,
     cleaning_data_root,
     monkeypatch,
 ):
@@ -435,6 +452,7 @@ def test_save_cleaning_result_removes_partial_outputs_after_failure(
         save_cleaning_result(
             session=test_session,
             file_id=organized_csv_file.id,
+            user_id=test_user.id,
             cleaned_dataframe=cleaned_df,
             date_value=datetime(2026, 8, 1, tzinfo=timezone.utc),
         )
@@ -447,6 +465,7 @@ def test_save_cleaning_result_removes_partial_outputs_after_failure(
 def test_save_cleaning_result_removes_outputs_after_database_failure(
     test_session,
     organized_csv_file,
+    test_user,
     cleaning_data_root,
     monkeypatch,
 ):
@@ -469,6 +488,7 @@ def test_save_cleaning_result_removes_outputs_after_database_failure(
         save_cleaning_result(
             session=test_session,
             file_id=organized_csv_file.id,
+            user_id=test_user.id,
             cleaned_dataframe=pd.DataFrame({"name": ["Menura"]}),
         )
 
@@ -480,10 +500,12 @@ def test_save_cleaning_result_removes_outputs_after_database_failure(
 def test_discard_cleaning_result_removes_both_exports(
     test_session,
     organized_csv_file,
+    test_user,
 ):
     result = save_cleaning_result(
         session=test_session,
         file_id=organized_csv_file.id,
+        user_id=test_user.id,
         cleaned_dataframe=pd.DataFrame({"name": ["Menura"]}),
     )
 

@@ -8,6 +8,7 @@ from backend.config.settings import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 SESSION_FINALIZED_KEY = "session_explicitly_finalized"
+COMMIT_ON_ERROR_KEY = "commit_session_changes_on_error"
 
 
 class Base(DeclarativeBase):
@@ -35,6 +36,7 @@ def enable_sqlite_foreign_keys(engine: Engine) -> None:
 engine = create_engine(
     DATABASE_URL,
     echo=False,
+    pool_pre_ping=True,
 )
 enable_sqlite_foreign_keys(engine)
 
@@ -55,8 +57,18 @@ def get_db_session():
             session.commit()
 
     except Exception:
-        session.rollback()
-        _restore_pending_file_deletions(session)
+        if session.info.pop(COMMIT_ON_ERROR_KEY, False):
+            try:
+                session.commit()
+            except Exception:
+                session.rollback()
+                _restore_pending_file_deletions(session)
+                raise
+            else:
+                _finalize_pending_file_deletions(session)
+        else:
+            session.rollback()
+            _restore_pending_file_deletions(session)
         raise
 
     else:
@@ -64,6 +76,11 @@ def get_db_session():
 
     finally:
         session.close()
+
+
+def commit_session_changes_on_error(session: Session) -> None:
+    """Preserve an intentionally recorded failure before re-raising it."""
+    session.info[COMMIT_ON_ERROR_KEY] = True
 
 
 def _restore_pending_file_deletions(session: Session) -> None:
@@ -98,4 +115,4 @@ def _finalize_pending_file_deletions(session: Session) -> None:
 
 def initialize_database() -> None:
     from backend.database import models
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine) # metadata contains the definitions of models

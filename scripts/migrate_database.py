@@ -228,6 +228,7 @@ def organize_remaining_uploads() -> list[int]:
                 organize_uploaded_file(
                     session=session,
                     file_id=record.id,
+                    user_id=record.user_id,
                     source_path=source_path,
                 )
                 organized_file_ids.append(record.id)

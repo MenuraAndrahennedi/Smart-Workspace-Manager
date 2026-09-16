@@ -338,10 +338,11 @@ def generate_chart(
 def generate_chart_for_file(
     session: Session,
     file_id: int,
+    user_id: int,
     configuration: ChartConfiguration,
 ) -> GeneratedChart:
     try:
-        _, df = load_organized_csv(session, file_id)
+        _, df = load_organized_csv(session, file_id, user_id)
     except CSVAnalysisError as error:
         raise VisualizationError(str(error)) from error
 

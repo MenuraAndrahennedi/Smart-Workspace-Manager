@@ -8,11 +8,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 from backend.database.db import Base, enable_sqlite_foreign_keys
-from backend.database.models import time_now, FileRecord
+from backend.database.models import time_now, FileRecord, User
 from backend.database import models
 from backend.database.repositories import (
     create_file,
-    read_file_by_id,
+    get_file_by_id,
     get_all_files,
     update_file,
     delete_file,
@@ -23,6 +23,7 @@ from backend.database.repositories import (
 # Equal to create_file in repositories.py
 INSERT_FILE_SQL = text("""
     INSERT INTO files (
+        user_id,
         original_name,
         stored_name,
         extension,
@@ -34,6 +35,7 @@ INSERT_FILE_SQL = text("""
         updated_at
     )
     VALUES (
+        :user_id,
         :original_name,
         :stored_name,
         :extension,
@@ -50,11 +52,11 @@ INSERT_FILE_SQL = text("""
 )
 
 # Definition of SELECT operation to files by id. Here Values are only placeholders. : means the placeholder in SQLAlchemy text()
-# Equal to read_file_by_id in repositories.py
+# Equal to get_file_by_id in repositories.py
 READ_FILE_BY_ID_SQL = text("""
     SELECT *
     FROM files
-    WHERE id = :file_id
+    WHERE id = :file_id AND user_id = :user_id
 """)
 
 # Definition of SELECT operation to all files. Here Values are only placeholders. : means the placeholder in SQLAlchemy text()
@@ -62,6 +64,7 @@ READ_FILE_BY_ID_SQL = text("""
 GET_ALL_FILES_SQL = text("""
     SELECT *
     FROM files
+    WHERE user_id = :user_id
     ORDER BY created_at DESC, id DESC
 """)
 
@@ -75,7 +78,7 @@ UPDATE_FILE_SQL = text("""
         category = :category,
         status = :status,
         updated_at = :updated_at
-    WHERE id = :file_id
+    WHERE id = :file_id AND user_id = :user_id
 """).bindparams(
     bindparam("updated_at", type_=DateTime()),
 )
@@ -84,13 +87,14 @@ UPDATE_FILE_SQL = text("""
 # Equal to delete_file in repositories.py
 DELETE_FILE_SQL = text("""
     DELETE FROM files
-    WHERE id = :file_id
+    WHERE id = :file_id AND user_id = :user_id
 """)
 
 
 
 def sql_insert_file(
     session: Session,
+    user_id: int,
     original_name: str,
     stored_name: str,
     extension: str,
@@ -102,6 +106,7 @@ def sql_insert_file(
     current_time = time_now()
 
     parameters = {
+        "user_id": user_id,
         "original_name": original_name,
         "stored_name": stored_name,
         "extension": extension,
@@ -122,11 +127,15 @@ def sql_insert_file(
     return int(result.lastrowid)
 
 
-def sql_read_file_by_id(
+def sql_get_file_by_id(
     session: Session,
-    file_id: int
+    file_id: int,
+    user_id: int,
 ) -> dict | None:
-    result = session.execute(READ_FILE_BY_ID_SQL, {"file_id": file_id}) 
+    result = session.execute(
+        READ_FILE_BY_ID_SQL,
+        {"file_id": file_id, "user_id": user_id},
+    )
 
     row = result.mappings().first() # Changes the rows into key-value style results, and recieve the first matching row
 
@@ -134,9 +143,10 @@ def sql_read_file_by_id(
 
 
 def sql_get_all_files(
-        session: Session
+    session: Session,
+    user_id: int,
 ) -> list[dict]:
-    result = session.execute(GET_ALL_FILES_SQL)
+    result = session.execute(GET_ALL_FILES_SQL, {"user_id": user_id})
 
     rows = result.mappings().all()
 
@@ -146,6 +156,7 @@ def sql_get_all_files(
 def sql_update_file(
     session: Session,
     file_id: int,
+    user_id: int,
     stored_name: str,
     storage_path: str,
     category: str,
@@ -155,6 +166,7 @@ def sql_update_file(
     
     parameters = {
         "file_id": file_id,
+        "user_id": user_id,
         "stored_name": stored_name,
         "category": category,
         "storage_path": storage_path,
@@ -170,9 +182,13 @@ def sql_update_file(
 
 def sql_delete_file(
     session: Session,
-    file_id: int
+    file_id: int,
+    user_id: int,
 ) -> bool:
-    result = session.execute(DELETE_FILE_SQL, {"file_id": file_id})
+    result = session.execute(
+        DELETE_FILE_SQL,
+        {"file_id": file_id, "user_id": user_id},
+    )
     session.flush()
 
     return result.rowcount > 0
@@ -188,6 +204,7 @@ def normalise_sql_file(
 
     return {
         "id": file_data["id"],
+        "user_id": file_data["user_id"],
         "original_name": file_data["original_name"],
         "stored_name": file_data["stored_name"],
         "extension": file_data["extension"],
@@ -206,6 +223,7 @@ def normalise_orm_file(
 
     return {
         "id": file_record.id,
+        "user_id": file_record.user_id,
         "original_name": file_record.original_name,
         "stored_name": file_record.stored_name,
         "extension": file_record.extension,
@@ -285,13 +303,27 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
     status = "uploaded"
 
     try:
-         with (
+        with (
             OrmVerificationSession() as orm_session,
             SQLVerificationSession() as sql_session,
         ):
+            orm_user = User(
+                email="orm-verification@example.com",
+                password_hash="verification-only",
+            )
+            sql_user = User(
+                email="sql-verification@example.com",
+                password_hash="verification-only",
+            )
+            orm_session.add(orm_user)
+            sql_session.add(sql_user)
+            orm_session.flush()
+            sql_session.flush()
+
             # Insert verification
             orm_created_file = create_file(
                 session=orm_session,
+                user_id=orm_user.id,
                 original_name=original_name,
                 stored_name=stored_name,
                 extension=extension,
@@ -303,6 +335,7 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
 
             sql_created_file_id = sql_insert_file(
                 session=sql_session,
+                user_id=sql_user.id,
                 original_name=original_name,
                 stored_name=stored_name,
                 extension=extension,
@@ -313,16 +346,18 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
             )
 
             orm_inserted_result = normalise_orm_file(
-                read_file_by_id(
+                get_file_by_id(
                     orm_session,
                     orm_created_file.id,
+                    orm_user.id,
                 )
             )
 
             sql_inserted_result = normalise_sql_file(
-                sql_read_file_by_id(
+                sql_get_file_by_id(
                     sql_session,
                     sql_created_file_id,
+                    sql_user.id,
                 )
             )
 
@@ -332,16 +367,18 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
 
             # Select by ID varification
             orm_selected_result = normalise_orm_file(
-                read_file_by_id(
+                get_file_by_id(
                     orm_session,
                     orm_created_file.id,
+                    orm_user.id,
                 )
             )
 
             sql_selected_result = normalise_sql_file(
-                sql_read_file_by_id(
+                sql_get_file_by_id(
                     sql_session,
                     sql_created_file_id,
+                    sql_user.id,
                 )
             )
 
@@ -352,12 +389,12 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
             # Get all files verification
             orm_all_results = [
                 normalise_orm_file(file_record)
-                for file_record in get_all_files(orm_session)
+                for file_record in get_all_files(orm_session, orm_user.id)
             ]
 
             sql_all_results = [
                 normalise_sql_file(file_data)
-                for file_data in sql_get_all_files(sql_session)
+                for file_data in sql_get_all_files(sql_session, sql_user.id)
             ]
 
             verification_results["SELECT ALL"] = (
@@ -375,6 +412,7 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
             orm_update_result = update_file(
                 session=orm_session,
                 file_id=orm_created_file.id,
+                user_id=orm_user.id,
                 stored_name=updated_stored_name,
                 storage_path=updated_storage_path,
                 category=updated_category,
@@ -384,6 +422,7 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
             sql_update_result = sql_update_file(
                 session=sql_session,
                 file_id=sql_created_file_id,
+                user_id=sql_user.id,
                 stored_name=updated_stored_name,
                 storage_path=updated_storage_path,
                 category=updated_category,
@@ -391,16 +430,18 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
             )
 
             orm_updated_file = normalise_orm_file(
-                read_file_by_id(
+                get_file_by_id(
                     orm_session,
                     orm_created_file.id,
+                    orm_user.id,
                 )
             )
 
             sql_updated_file = normalise_sql_file(
-                sql_read_file_by_id(
+                sql_get_file_by_id(
                     sql_session,
                     sql_created_file_id,
+                    sql_user.id,
                 )
             )
 
@@ -414,21 +455,28 @@ def run_crud_verification(db_path: Path | str | None = None) -> bool:
             orm_delete_result = delete_file(
                 session=orm_session,
                 file_id=orm_created_file.id,
+                user_id=orm_user.id,
             )
 
             sql_delete_result = sql_delete_file(
                 session=sql_session,
                 file_id=sql_created_file_id,
+                user_id=sql_user.id,
             )
 
-            orm_deleted_file = read_file_by_id(
-                orm_session,
-                orm_created_file.id,
-            )
+            try:
+                orm_deleted_file = get_file_by_id(
+                    orm_session,
+                    orm_created_file.id,
+                    orm_user.id,
+                )
+            except FileNotFoundError:
+                orm_deleted_file = None
 
-            sql_deleted_file = sql_read_file_by_id(
+            sql_deleted_file = sql_get_file_by_id(
                 sql_session,
                 sql_created_file_id,
+                sql_user.id,
             )
 
             verification_results["DELETE"] = (

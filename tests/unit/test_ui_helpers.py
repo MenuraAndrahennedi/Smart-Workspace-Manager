@@ -5,7 +5,7 @@ import pytest
 
 from backend.database import db
 from backend.database.db import SESSION_FINALIZED_KEY
-from frontend import ui_helpers
+from frontend.legacy_streamlit import ui_helpers
 
 
 @pytest.mark.parametrize(

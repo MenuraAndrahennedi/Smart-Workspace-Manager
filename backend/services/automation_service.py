@@ -11,6 +11,7 @@ from backend.utils.constants import ORGANIZER_CATEGORY_RULES, DEFAULT_ORGANIZER_
 from backend.config import settings
 from backend.utils.file_utils import ensure_dated_directory
 from backend.utils.time_utils import time_now
+from backend.database.db import commit_session_changes_on_error
 from backend.database.repositories import update_file_location, create_automation_log
 
 logger = logging.getLogger(__name__)
@@ -46,8 +47,9 @@ def build_destination_directory(
 
 def organize_uploaded_file(
     session: Session,
-    file_id: int, 
-    source_path: Path
+    file_id: int,
+    user_id: int,
+    source_path: Path,
 ) -> OrganizationResult:
     source_path = Path(source_path)
     file_category = detect_file_category(source_path.name)
@@ -61,6 +63,7 @@ def organize_uploaded_file(
             updated_file_record = update_file_location(
                 session=session,
                 file_id = file_id,
+                user_id=user_id,
                 new_path = moved_path,
                 category = file_category,
                 status = "organized",
@@ -102,13 +105,19 @@ def organize_uploaded_file(
 
         try:
             with session.begin_nested():
-                update_file_location(
-                    session=session,
-                    file_id=file_id,
-                    new_path=failure_path,
-                    category=file_category,
-                    status="failed",
-                )
+                try:
+                    update_file_location(
+                        session=session,
+                        file_id=file_id,
+                        user_id=user_id,
+                        new_path=failure_path,
+                        category=file_category,
+                        status="failed",
+                    )
+                except FileNotFoundError:
+                    # There is no file row to mark as failed, but the failed
+                    # organization attempt should still have an audit entry.
+                    pass
                 create_automation_log(
                     session=session,
                     action="organize_file",
@@ -116,6 +125,7 @@ def organize_uploaded_file(
                     status="failed",
                     message=str(error),
                 )
+            commit_session_changes_on_error(session)
         except Exception:
             logger.exception(
                 "Could not save the organization failure state."

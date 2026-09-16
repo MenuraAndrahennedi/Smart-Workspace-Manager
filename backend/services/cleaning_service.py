@@ -13,6 +13,7 @@ from backend.services.analysis_service import (
     load_organized_csv,
 )
 from backend.utils.file_utils import ensure_dated_directory, generate_safe_filename
+from backend.utils.dataframe_utils import dataframe_to_records
 from backend.utils.time_utils import time_now
 
 
@@ -60,6 +61,17 @@ class CleaningPreviewResult:
     rows_dropped: int
     remaining_missing_values: int
 
+    def to_api_response(self) -> dict:
+        return {
+            "cleaned_dataframe": dataframe_to_records(self.cleaned_dataframe),
+            "original_row_count": self.original_row_count,
+            "cleaned_row_count": self.cleaned_row_count,
+            "duplicates_removed": self.duplicates_removed,
+            "missing_values_filled": self.missing_values_filled,
+            "rows_dropped": self.rows_dropped,
+            "remaining_missing_values": self.remaining_missing_values,
+        }
+
 @dataclass
 class CleaningSaveResult:
     csv_file_id: int
@@ -81,9 +93,10 @@ class CleaningColumnOptions:
 def load_cleaning_source(
     session: Session,
     file_id: int,
+    user_id: int,
 ) -> pd.DataFrame:
     try:
-        _, dataframe = load_organized_csv(session, file_id)
+        _, dataframe = load_organized_csv(session, file_id, user_id)
         return dataframe
     except CSVAnalysisError as error:
         raise DataCleaningError(str(error)) from error
@@ -252,9 +265,10 @@ def fill_text_missing_values(
 def preview_cleaning(
     session: Session,
     file_id: int,
+    user_id: int,
     cleaning_options: CleaningOptions,
 ) -> CleaningPreviewResult:
-    original_df = load_cleaning_source(session, file_id)
+    original_df = load_cleaning_source(session, file_id, user_id)
     working_df = original_df.copy()
 
     duplicates_removed = 0
@@ -309,11 +323,12 @@ def preview_cleaning(
 def save_cleaning_result(
     session : Session,
     file_id: int,
+    user_id: int,
     cleaned_dataframe: pd.DataFrame,
     date_value: datetime | None = None,
 ) -> CleaningSaveResult:
     try:
-        file_record = get_organized_csv_record(session, file_id)
+        file_record = get_organized_csv_record(session, file_id, user_id)
     except CSVAnalysisError as error:
         raise DataCleaningError(str(error)) from error
 
@@ -350,6 +365,7 @@ def save_cleaning_result(
         )
         csv_record = create_file(
             session=session,
+            user_id=user_id,
             original_name=csv_original_name,
             stored_name=csv_filename,
             extension="csv",
@@ -360,6 +376,7 @@ def save_cleaning_result(
         )
         excel_record = create_file(
             session=session,
+            user_id=user_id,
             original_name=excel_original_name,
             stored_name=excel_filename,
             extension="xlsx",

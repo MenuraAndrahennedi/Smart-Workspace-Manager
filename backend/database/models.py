@@ -63,12 +63,22 @@ class FileRecord(Base):
 
     analysis_jobs: Mapped[list["AnalysisJob"]] = relationship(
         back_populates="file",
-        passive_deletes=True,
+        passive_deletes="all",
     )
 
     reports: Mapped[list["Report"]] = relationship(
         back_populates="file",
-        passive_deletes=True,
+        passive_deletes="all",
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    owner: Mapped["User"] = relationship(
+        back_populates="files"
     )
 
 
@@ -235,6 +245,35 @@ class AppSetting(Base):
 
 
 
+# User
+class User(Base):
+    __tablename__ = "users"
 
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    email: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=False,
+    )
+
+    password_hash: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        default=time_now,
+        nullable=False,
+    )
+
+    files: Mapped[list["FileRecord"]] = relationship(
+        back_populates="owner",
+        passive_deletes="all",
+    )
 
 

@@ -407,7 +407,7 @@ def test_generate_chart_enforces_bar_category_limit(monkeypatch):
 
 
 @pytest.fixture
-def visualization_csv_file(test_session, temporary_data_root):
+def visualization_csv_file(test_session, temporary_data_root, test_user):
     data_root = temporary_data_root
     csv_path = data_root / "visualization.csv"
     csv_path.write_text(
@@ -417,6 +417,7 @@ def visualization_csv_file(test_session, temporary_data_root):
 
     return create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="visualization.csv",
         stored_name="visualization.csv",
         extension="csv",
@@ -430,10 +431,12 @@ def visualization_csv_file(test_session, temporary_data_root):
 def test_generate_chart_for_file_loads_organized_csv(
     test_session,
     visualization_csv_file,
+    test_user,
 ):
     result = generate_chart_for_file(
         session=test_session,
         file_id=visualization_csv_file.id,
+        user_id=test_user.id,
         configuration=ChartConfiguration(
             chart_type="bar",
             title="Regional counts",
@@ -445,11 +448,12 @@ def test_generate_chart_for_file_loads_organized_csv(
     assert result.figure.data[0].type == "bar"
 
 
-def test_generate_chart_for_file_rejects_missing_record(test_session):
-    with pytest.raises(VisualizationError, match="does not exist"):
+def test_generate_chart_for_file_rejects_missing_record(test_session, test_user):
+    with pytest.raises(FileNotFoundError, match="was not found"):
         generate_chart_for_file(
             session=test_session,
             file_id=999,
+            user_id=test_user.id,
             configuration=ChartConfiguration(
                 chart_type="bar",
                 title="Missing",

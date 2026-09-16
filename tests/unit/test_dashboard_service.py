@@ -2,9 +2,13 @@ from backend.database.repositories import create_file
 from backend.services.dashboard_service import get_dashboard_data
 
 
-def test_get_dashboard_data_returns_summary_counts_and_recent_files(test_session):
+def test_get_dashboard_data_returns_summary_counts_and_recent_files(
+    test_session,
+    test_user,
+):
     first = create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="sales_2026.csv",
         stored_name="stored_sales_2026.csv",
         extension="csv",
@@ -15,6 +19,7 @@ def test_get_dashboard_data_returns_summary_counts_and_recent_files(test_session
     )
     second = create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="backup.zip",
         stored_name="stored_backup.zip",
         extension="zip",
@@ -26,6 +31,7 @@ def test_get_dashboard_data_returns_summary_counts_and_recent_files(test_session
 
     dashboard_data = get_dashboard_data(
         session=test_session,
+        user_id=test_user.id,
         recent_limit=1,
     )
 

@@ -12,7 +12,7 @@ from backend.services.visualization_service import ChartConfiguration
 
 
 @pytest.fixture
-def report_source(test_session, temporary_data_root):
+def report_source(test_session, temporary_data_root, test_user):
     data_root = temporary_data_root
     csv_path = data_root / "sales.csv"
     csv_path.write_text(
@@ -23,6 +23,7 @@ def report_source(test_session, temporary_data_root):
 
     file_record = create_file(
         session=test_session,
+        user_id=test_user.id,
         original_name="sales.csv",
         stored_name="sales.csv",
         extension="csv",
@@ -55,6 +56,7 @@ def report_charts() -> list[ChartConfiguration]:
 def test_create_report_saves_html_pdf_and_database_records(
     test_session,
     report_source,
+    test_user,
 ):
     file_record, data_root = report_source
 
@@ -64,6 +66,7 @@ def test_create_report_saves_html_pdf_and_database_records(
     result = create_report(
         session=test_session,
         file_id=file_record.id,
+        user_id=test_user.id,
         chart_configurations=report_charts(),
         date_value=datetime(2026, 8, 1, tzinfo=timezone.utc),
     )
@@ -107,6 +110,7 @@ def test_create_report_saves_html_pdf_and_database_records(
 def test_create_report_validates_chart_list(
     test_session,
     report_source,
+    test_user,
     monkeypatch,
 ):
     file_record, _ = report_source
@@ -115,6 +119,7 @@ def test_create_report_validates_chart_list(
         create_report(
             session=test_session,
             file_id=file_record.id,
+            user_id=test_user.id,
             chart_configurations=[],
         )
 
@@ -123,6 +128,7 @@ def test_create_report_validates_chart_list(
         create_report(
             session=test_session,
             file_id=file_record.id,
+            user_id=test_user.id,
             chart_configurations=report_charts(),
         )
 
@@ -131,6 +137,7 @@ def test_create_report_validates_chart_list(
         create_report(
             session=test_session,
             file_id=file_record.id,
+            user_id=test_user.id,
             chart_configurations=[report_charts()[0]] * 11,
         )
 
@@ -138,6 +145,7 @@ def test_create_report_validates_chart_list(
 def test_create_report_wraps_chart_errors_without_creating_record(
     test_session,
     report_source,
+    test_user,
 ):
     file_record, _ = report_source
     invalid_chart = ChartConfiguration(
@@ -150,6 +158,7 @@ def test_create_report_wraps_chart_errors_without_creating_record(
         create_report(
             session=test_session,
             file_id=file_record.id,
+            user_id=test_user.id,
             chart_configurations=[invalid_chart],
         )
 
@@ -159,6 +168,7 @@ def test_create_report_wraps_chart_errors_without_creating_record(
 def test_create_report_marks_both_records_failed_when_html_write_fails(
     test_session,
     report_source,
+    test_user,
     monkeypatch,
 ):
     file_record, _ = report_source
@@ -172,6 +182,7 @@ def test_create_report_marks_both_records_failed_when_html_write_fails(
         create_report(
             session=test_session,
             file_id=file_record.id,
+            user_id=test_user.id,
             chart_configurations=report_charts(),
         )
 
@@ -184,6 +195,7 @@ def test_create_report_marks_both_records_failed_when_html_write_fails(
 def test_create_report_keeps_html_when_pdf_write_fails(
     test_session,
     report_source,
+    test_user,
     monkeypatch,
 ):
     file_record, _ = report_source
@@ -197,6 +209,7 @@ def test_create_report_keeps_html_when_pdf_write_fails(
         create_report(
             session=test_session,
             file_id=file_record.id,
+            user_id=test_user.id,
             chart_configurations=report_charts(),
         )
 

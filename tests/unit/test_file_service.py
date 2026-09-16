@@ -53,6 +53,7 @@ def test_get_library_files_uses_repository_filters(monkeypatch):
 
     result = get_library_files(
         session=fake_session,
+        user_id=7,
         search_term="report",
         category=["pdf"],
         status=["organized"],
@@ -61,6 +62,7 @@ def test_get_library_files_uses_repository_filters(monkeypatch):
     assert result == expected_records
     assert received_arguments == {
         "session": fake_session,
+        "user_id": 7,
         "search_term": "report",
         "category": ["pdf"],
         "status": ["organized"],
@@ -100,6 +102,7 @@ def test_successful_upload_file(monkeypatch):
 
     def fake_create_file(
         session,
+        user_id,
         original_name,
         stored_name,
         extension,
@@ -108,6 +111,7 @@ def test_successful_upload_file(monkeypatch):
         storage_path,
     ):
         assert session is fake_session
+        assert user_id == 7
         assert original_name == "report.csv"
         assert stored_name == "report_12345678.csv"
         assert extension == "csv"
@@ -132,7 +136,7 @@ def test_successful_upload_file(monkeypatch):
         fake_create_file,
     )
 
-    result = upload_file("report.csv", file_bytes, fake_session)
+    result = upload_file("report.csv", file_bytes, fake_session, user_id=7)
 
     assert result.file_id == 42
     assert result.original_filename == "report.csv"
@@ -168,6 +172,7 @@ def test_upload_file_retries_when_stored_filename_exists(monkeypatch):
 
     def fake_create_file(
         session,
+        user_id,
         original_name,
         stored_name,
         extension,
@@ -176,6 +181,7 @@ def test_upload_file_retries_when_stored_filename_exists(monkeypatch):
         storage_path,
     ):
         assert stored_name == "report_second.csv"
+        assert user_id == 7
         return SimpleNamespace(id=42, status="uploaded")
 
     monkeypatch.setattr(
@@ -194,7 +200,7 @@ def test_upload_file_retries_when_stored_filename_exists(monkeypatch):
         fake_create_file,
     )
 
-    result = upload_file("report.csv", file_bytes, fake_session)
+    result = upload_file("report.csv", file_bytes, fake_session, user_id=7)
 
     assert result.stored_filename == "report_second.csv"
     assert Path(result.saved_path) == Path("data/uploads/report_second.csv")
@@ -227,7 +233,12 @@ def test_upload_file_stops_after_retry_limit(monkeypatch):
     monkeypatch.setattr(file_service, "create_file", fake_create_file)
 
     with pytest.raises(FileExistsError):
-        upload_file("report.csv", b"name,score\nAsha,95\n", fake_session)
+        upload_file(
+            "report.csv",
+            b"name,score\nAsha,95\n",
+            fake_session,
+            user_id=7,
+        )
 
     assert len(generate_calls) == 3
     assert len(save_calls) == 3
@@ -254,7 +265,12 @@ def test_upload_file_propagates_storage_failure_without_create_or_cleanup(monkey
     monkeypatch.setattr(file_service, "delete_stored_file", fake_delete_stored_file)
 
     with pytest.raises(OSError, match="Disk is unavailable"):
-        upload_file("report.csv", b"name,score\nAsha,95\n", fake_session)
+        upload_file(
+            "report.csv",
+            b"name,score\nAsha,95\n",
+            fake_session,
+            user_id=7,
+        )
 
     assert create_calls == []
     assert cleanup_calls == []
@@ -278,7 +294,12 @@ def test_upload_file_deletes_saved_file_when_database_create_fails(monkeypatch):
     monkeypatch.setattr(file_service, "delete_stored_file", fake_delete_stored_file)
 
     with pytest.raises(RuntimeError, match="Database insert failed"):
-        upload_file("report.csv", b"name,score\nAsha,95\n", fake_session)
+        upload_file(
+            "report.csv",
+            b"name,score\nAsha,95\n",
+            fake_session,
+            user_id=7,
+        )
 
     assert cleanup_calls == [fake_saved_path]
 
@@ -300,7 +321,12 @@ def test_upload_file_logs_cleanup_failure_and_reraises_database_error(monkeypatc
 
     with caplog.at_level("ERROR", logger=file_service.logger.name):
         with pytest.raises(RuntimeError, match="Database insert failed"):
-            upload_file("report.csv", b"name,score\nAsha,95\n", fake_session)
+            upload_file(
+                "report.csv",
+                b"name,score\nAsha,95\n",
+                fake_session,
+                user_id=7,
+            )
 
     assert "Failed to clean up partially uploaded file" in caplog.text
 
@@ -314,14 +340,15 @@ def test_delete_actual_file_deletes_database_record_and_storage_file(monkeypatch
 
     monkeypatch.setattr(
         file_service,
-        "read_file_by_id",
-        lambda session, file_id: SimpleNamespace(
+        "get_file_by_id",
+        lambda session, file_id, user_id: SimpleNamespace(
             original_name="report.csv",
             storage_path=str(stored_file),
         ),
     )
 
-    def fake_delete_file(session, file_id):
+    def fake_delete_file(session, file_id, user_id):
+        assert user_id == 7
         calls.append(("database", file_id))
         return True
 
@@ -341,6 +368,7 @@ def test_delete_actual_file_deletes_database_record_and_storage_file(monkeypatch
     result = delete_actual_file(
         session=fake_session,
         file_id=42,
+        user_id=7,
     )
 
     assert calls == [
@@ -364,19 +392,24 @@ def test_delete_actual_file_allows_missing_storage_file_for_stale_record(monkeyp
 
     monkeypatch.setattr(
         file_service,
-        "read_file_by_id",
-        lambda session, file_id: SimpleNamespace(
+        "get_file_by_id",
+        lambda session, file_id, user_id: SimpleNamespace(
             original_name="missing.csv",
             storage_path=str(missing_file),
         ),
     )
-    monkeypatch.setattr(file_service, "delete_file", lambda session, file_id: True)
+    monkeypatch.setattr(
+        file_service,
+        "delete_file",
+        lambda session, file_id, user_id: True,
+    )
     monkeypatch.setattr(file_service, "get_report_storage_paths", lambda **kwargs: [])
     monkeypatch.setattr(file_service, "stage_files_for_deletion", lambda paths: [])
 
     result = delete_actual_file(
         session=fake_session,
         file_id=42,
+        user_id=7,
     )
 
     assert result["database_deleted"] is True
@@ -388,11 +421,15 @@ def test_delete_actual_file_allows_missing_storage_file_for_stale_record(monkeyp
 def test_delete_actual_file_raises_when_database_record_is_missing(monkeypatch):
     delete_calls = []
 
-    monkeypatch.setattr(file_service, "read_file_by_id", lambda session, file_id: None)
+    monkeypatch.setattr(
+        file_service,
+        "get_file_by_id",
+        lambda session, file_id, user_id: None,
+    )
     monkeypatch.setattr(
         file_service,
         "delete_file",
-        lambda session, file_id: delete_calls.append(file_id),
+        lambda session, file_id, user_id: delete_calls.append(file_id),
     )
     monkeypatch.setattr(file_service, "get_report_storage_paths", lambda **kwargs: [])
     monkeypatch.setattr(
@@ -405,6 +442,7 @@ def test_delete_actual_file_raises_when_database_record_is_missing(monkeypatch):
         delete_actual_file(
             session=SimpleNamespace(info={}),
             file_id=42,
+            user_id=7,
         )
 
     assert delete_calls == []
@@ -421,14 +459,15 @@ def test_delete_actual_file_restores_staged_file_when_database_flush_fails(
 
     monkeypatch.setattr(
         file_service,
-        "read_file_by_id",
-        lambda session, file_id: SimpleNamespace(
+        "get_file_by_id",
+        lambda session, file_id, user_id: SimpleNamespace(
             original_name="unsafe.csv",
             storage_path=str(stored_file),
         ),
     )
 
-    def fake_delete_file(session, file_id):
+    def fake_delete_file(session, file_id, user_id):
+        assert user_id == 7
         calls.append(("database", file_id))
         raise RuntimeError("Database delete failed")
 
@@ -456,6 +495,7 @@ def test_delete_actual_file_restores_staged_file_when_database_flush_fails(
         delete_actual_file(
             session=SimpleNamespace(info={}),
             file_id=42,
+            user_id=7,
         )
 
     assert calls == [

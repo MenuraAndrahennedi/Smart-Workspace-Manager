@@ -3,11 +3,13 @@ from pathlib import Path
 
 
 def test_streamlit_pages_do_not_bypass_service_layer():
-    frontend_directory = Path(__file__).resolve().parents[2] / "frontend"
+    frontend_directory = (
+        Path(__file__).resolve().parents[2] / "frontend" / "legacy_streamlit"
+    )
     frontend_files = [
         frontend_directory / "streamlit_app.py",
         frontend_directory / "ui_helpers.py",
-        *frontend_directory.joinpath("pages").glob("*.py"),
+        *frontend_directory.joinpath("app_pages").glob("*.py"),
     ]
     forbidden_code = (
         "backend.database.repositories",
@@ -27,10 +29,13 @@ def test_streamlit_pages_do_not_bypass_service_layer():
 
 
 def test_unexpected_streamlit_errors_are_logged():
-    frontend_directory = Path(__file__).resolve().parents[2] / "frontend"
+    frontend_directory = (
+        Path(__file__).resolve().parents[2] / "frontend" / "legacy_streamlit"
+    )
     frontend_files = [
+        frontend_directory / "streamlit_app.py",
         frontend_directory / "ui_helpers.py",
-        *frontend_directory.joinpath("pages").glob("*.py"),
+        *frontend_directory.joinpath("app_pages").glob("*.py"),
     ]
     violations = []
 

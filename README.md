@@ -378,4 +378,5 @@ See [SQL and SQLAlchemy notes](docs/sql/sql_crud.md) for the corresponding examp
 - [Complete work plan](docs/UPDATED_Smart_Workspace_Manager_Complete_Work_Plan.pdf)
 - [Project documentation](docs/UPDATED_Smart_Workspace_Manager_Project_Document.pdf)
 - [Folder structure documentation](docs/Smart_Workspace_Manager_Folder_Structure_Documentation.pdf)
+- [Azure SQL setup and SQLite fallback](docs/azure_sql_setup.md)
 - [SQL and SQLAlchemy notes](docs/sql/sql_crud.md)
