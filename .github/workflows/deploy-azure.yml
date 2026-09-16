@@ -1,9 +1,9 @@
-name: Deploy Streamlit app to Azure
+name: Test and deploy FastAPI backend
 
 on:
   push:
     branches:
-      - phase-1-azure-deployment
+      - main
   workflow_dispatch:
 
 permissions:
@@ -14,18 +14,59 @@ env:
   AZURE_WEBAPP_NAME: smart-workspace-manager-phase1
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: sqlite:///./data/ci.db
+      STORAGE_PROVIDER: local
+      DATA_ROOT: ./data
+      MAX_UPLOAD_SIZE_MB: 10
+      MAX_FILENAME_ATTEMPTS: 3
+      SECRET_KEY: ci-only-secret-key-with-at-least-32-characters
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      LOG_LEVEL: INFO
+      MAX_CSV_ANALYSIS_SIZE_MB: 10
+      MAX_CSV_ROWS: 50000
+      MAX_CSV_COLUMNS: 200
+      MAX_CHART_ROWS: 5000
+      MAX_BAR_CATEGORIES: 30
+      MAX_REPORT_CHARTS: 10
+      FRONTEND_ORIGINS: http://localhost:5173
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-streamlit.txt
+
+      - name: Check dependencies
+        run: python -m pip check
+
+      - name: Run backend tests
+        run: python -m pytest tests/unit tests/api tests/integration -q
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Verify deployment files
+      - name: Verify backend deployment files
         run: |
           test -f requirements.txt
-          test -f frontend/streamlit_app.py
-          test -f scripts/init_db.py
+          test -f backend/main.py
+          test -f gunicorn.conf.py
 
       - name: Sign in to Azure using OIDC
         uses: azure/login@v2
@@ -34,7 +75,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy to Azure App Service
+      - name: Deploy FastAPI backend
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
